@@ -2,7 +2,7 @@
 import argparse
 
 import tvm
-from tvm import  auto_scheduler
+from tvm import auto_scheduler
 
 from tune_network import get_network
 

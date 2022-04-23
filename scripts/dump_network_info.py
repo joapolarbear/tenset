@@ -51,7 +51,7 @@ def get_network_with_key(network_key):
 
         input_data = torch.randn(input_shape).type(dtype2torch(dtype))
         scripted_model = torch.jit.trace(model, input_data).eval()
-
+        
         input_name = 'input0'
         shape_list = [(input_name, input_shape)]
         mod, params = relay.frontend.from_pytorch(scripted_model, shape_list)

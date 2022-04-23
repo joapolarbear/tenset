@@ -171,3 +171,9 @@ if __name__ == "__main__":
 
     train_zero_shot(dataset, args.train_ratio, args.models, args.split_scheme, args.use_gpu)
 
+'''
+python3 train_model.py --train-ratio 0.95
+python3 train_model.py --train-ratio 0.95 --models xgb@mlp@tab@random --use-gpu
+'''
+
+
