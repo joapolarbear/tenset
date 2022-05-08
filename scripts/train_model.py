@@ -13,7 +13,7 @@ import tvm
 from tvm.auto_scheduler.utils import to_str_round
 from tvm.auto_scheduler.cost_model import RandomModelInternal
 
-from common import load_and_register_tasks, str2bool
+from common import load_and_register_tasks, str2bool, get_task_info_filename
 
 from tvm.auto_scheduler.dataset import Dataset, LearningTask
 from tvm.auto_scheduler.cost_model.xgb_model import XGBModelInternal
@@ -44,11 +44,20 @@ def evaluate_model(model, test_set):
     r_sqaured_list = []
     pair_acc_list = []
     mape_list = []
+    mape_avg_list = []
     peak_score1_list = []
     peak_score5_list = []
 
 
     for task in tasks:
+        
+        ### Calculate flop_cnt
+        file_name = get_task_info_filename(task.workload_key, tvm.target.Target(task.target))
+        file_name = file_name.replace("network_info", "to_measure_programs").replace("task.pkl", "json")
+        inputs, _ = tvm.auto_scheduler.RecordReader(file_name).read_lines()
+        search_task = tvm.auto_scheduler.measure.recover_measure_input(inputs[0]).task
+        flop_ct = search_task.compute_dag.flop_ct
+
         preds = prediction[task]
         labels = test_set.throughputs[task]
 
@@ -56,6 +65,7 @@ def evaluate_model(model, test_set):
         r_sqaured_list.append(metric_r_squared(preds, labels))
         pair_acc_list.append(metric_pairwise_comp_accuracy(preds, labels))
         mape_list.append(metric_mape(preds, labels))
+        mape_avg_list.append(metric_mape(flop_ct/preds, flop_ct/labels))
         peak_score1_list.append(metric_peak_score(preds, labels, 1))
         peak_score5_list.append(metric_peak_score(preds, labels, 5))
 
@@ -63,6 +73,7 @@ def evaluate_model(model, test_set):
     r_sqaured = np.average(r_sqaured_list, weights=weights)
     pair_acc = np.average(pair_acc_list, weights=weights)
     mape = np.average(mape_list, weights=weights)
+    mape_avg = np.average(mape_avg_list, weights=weights)
     peak_score1 = np.average(peak_score1_list, weights=weights)
     peak_score5 = np.average(peak_score5_list, weights=weights)
 
@@ -71,6 +82,7 @@ def evaluate_model(model, test_set):
         "R^2": r_sqaured,
         "pairwise comparision accuracy": pair_acc,
         "mape": mape,
+        "mape_avg": mape_avg,
         "average peak score@1": peak_score1,
         "average peak score@5": peak_score5,
     }

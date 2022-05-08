@@ -210,6 +210,6 @@ if __name__ == "__main__":
 '''
 python3 make_dataset.py \
     --logs dataset/measure_records/t4/*.json \
-    --out-file .workspace/dataset.pkl
-
+    --out-file .workspace/dataset.pkl \
+    --sample-in-files 100
 '''
