@@ -179,3 +179,14 @@ if __name__ == "__main__":
     tune_and_evaluate(network_args, tuning_args, target, args.target_host,
                       args.result_file, args.transfer_tune, args.search_type)
 
+
+'''
+python3 tune_network.py \
+    --network resnet_18 \
+    --batch-size 1 \
+    --target cuda \
+    --cost-model xgb \
+    --log-file .workspace/tune/tune.log \
+    --result-file .workspace/tune/end2end.tsv
+    
+'''

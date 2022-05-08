@@ -50,3 +50,9 @@ if __name__ == "__main__":
 
     estimaet_network(network_args, args.target, args.log_file)
 
+'''
+python3 estimate_network_latency.py \
+    --batch-size 1 \
+    --target cuda \
+    --log-file dataset/measure_records/t4/*.json \
+'''

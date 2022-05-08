@@ -201,13 +201,15 @@ if __name__ == "__main__":
         files = random.sample(files, args.sample_in_files)
 
     ### Debug
-    files = ["dataset/measure_records/t4/([8c674f26f66543069d1e1c56cda249f9,4,32,32,128,1,1,128,256,1,1,1,256,4,16,16,256],cuda).json"]
+    # files = ["dataset/measure_records/t4/([8c674f26f66543069d1e1c56cda249f9,4,32,32,128,1,1,128,256,1,1,1,256,4,16,16,256],cuda).json"]
 
     print("Featurize measurement records...")
     auto_scheduler.dataset.make_dataset_from_log_file(
         files, args.out_file, args.min_sample_size)
 
 '''
-python3 make_dataset.py --logs dataset/measure_records/t4/*.json
+python3 make_dataset.py \
+    --logs dataset/measure_records/t4/*.json \
+    --out-file .workspace/dataset.pkl
 
 '''

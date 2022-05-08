@@ -4,6 +4,7 @@ import argparse
 import logging
 import pickle
 import random
+import os
 
 import torch
 import numpy as np
@@ -92,7 +93,17 @@ def make_model(name, use_gpu=False):
         raise ValueError("Invalid model: " + name)
  
 
-def train_zero_shot(dataset, train_ratio, model_names, split_scheme, use_gpu):
+def train_zero_shot(
+    dataset,
+    train_ratio,
+    model_names,
+    split_scheme,
+    use_gpu,
+    out_dir=".workspace/cm"):
+
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
+
     # Split dataset
     if split_scheme == "within_task":
         train_set, test_set = dataset.random_split_within_task(train_ratio)
@@ -117,7 +128,7 @@ def train_zero_shot(dataset, train_ratio, model_names, split_scheme, use_gpu):
     eval_results = []
     for name, model in zip(names, models):
         # Train the model
-        filename = name + ".pkl"
+        filename = os.path.join(out_dir, name + ".pkl")
         model.fit_base(train_set, valid_set=test_set)
         print("Save model to %s" % filename)
         model.save(filename)
@@ -150,6 +161,7 @@ if __name__ == "__main__":
     parser.add_argument("--use-gpu", type=str2bool, nargs='?',
                         const=True, default=False,
                         help="Whether to use GPU for xgb.")
+    parser.add_argument("--out-dir", type=str, default='.workspace/cm')
     args = parser.parse_args()
     print("Arguments: %s" % str(args))
 
@@ -169,11 +181,21 @@ if __name__ == "__main__":
         tmp_dataset = pickle.load(open(args.dataset[i], "rb"))
         dataset.update_from_dataset(tmp_dataset)
 
-    train_zero_shot(dataset, args.train_ratio, args.models, args.split_scheme, args.use_gpu)
+    train_zero_shot(
+        dataset,
+        args.train_ratio,
+        args.models,
+        args.split_scheme,
+        args.use_gpu,
+        args.out_dir)
 
 '''
 python3 train_model.py --train-ratio 0.95
-python3 train_model.py --train-ratio 0.95 --models xgb@mlp@tab@random --use-gpu
+python3 train_model.py \
+    --train-ratio 0.95 \
+    --models xgb@mlp@tab@random \
+    --use-gpu \
+    --dataset .workspace/dataset.pkl
 '''
 
 
