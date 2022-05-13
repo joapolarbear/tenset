@@ -52,6 +52,7 @@ if __name__ == "__main__":
 
 '''
 python3 estimate_network_latency.py \
+    --network resnet_50 \
     --batch-size 1 \
     --target cuda \
     --log-file dataset/measure_records/t4/*.json \

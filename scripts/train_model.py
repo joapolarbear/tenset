@@ -15,6 +15,8 @@ from tvm.auto_scheduler.cost_model import RandomModelInternal
 
 from common import load_and_register_tasks, str2bool, get_task_info_filename
 
+from tvm.auto_scheduler import SketchPolicy, extract_tasks
+from tvm.auto_scheduler.feature import get_per_store_features_from_states
 from tvm.auto_scheduler.dataset import Dataset, LearningTask
 from tvm.auto_scheduler.cost_model.xgb_model import XGBModelInternal
 from tvm.auto_scheduler.cost_model.mlp_model import MLPModelInternal
@@ -30,8 +32,48 @@ from tvm.auto_scheduler.cost_model.metric import (
     random_mix,
 )
 
+def get_sample_records(mod, params, target, number, model):
+    # Extract search tasks
+    target = tvm.target.Target(target)
+    tasks, task_weights = extract_tasks(mod["main"], params, target)
+
+    rst = 0
+    for task_id, task in enumerate(tasks):
+        """Generate a list of random MeasureInput and MeasureResult pairs"""
+        policy = SketchPolicy(task, verbose=0)
+        states = policy.sample_initial_population()[:number]
+
+        learning_task = LearningTask(task.workload_key, str(task.target))
+        features = get_per_store_features_from_states(states, task)
+        eval_dataset = Dataset.create_one_task(learning_task, features, None)
+        ret = model.predict(eval_dataset)[learning_task]
+        # Predict 0 for invalid states that failed to be lowered.
+        # _ret = []
+        # for idx, feature in enumerate(features):
+        #     if feature.min() == feature.max() == 0:
+        #         ret[idx] = float('-inf')
+        #     else:
+        #         _ret.append(ret[idx])
+        _ret = ret
+        assert len(_ret) > 0
+        print(np.mean(_ret), task_weights[task_id])
+        rst += np.mean(_ret) * task_weights[task_id]
+    
+    return rst
 
 def evaluate_model(model, test_set):
+
+    from tune_network import get_network
+    network_args = {
+        "network": "resnet_50",
+        "batch_size": 1,
+    }
+    target = "cuda"
+    mod, params, inputs = get_network(network_args)
+    ret = get_sample_records(mod, params, target, 1, model)
+    print(ret)
+    raise
+
     # make prediction
     prediction = model.predict(test_set)
 
@@ -77,6 +119,7 @@ def evaluate_model(model, test_set):
     peak_score1 = np.average(peak_score1_list, weights=weights)
     peak_score5 = np.average(peak_score5_list, weights=weights)
 
+
     eval_res = {
         "RMSE": rmse,
         "R^2": r_sqaured,
@@ -85,6 +128,7 @@ def evaluate_model(model, test_set):
         "mape_avg": mape_avg,
         "average peak score@1": peak_score1,
         "average peak score@5": peak_score5,
+        "End2end": ret,
     }
     return eval_res
 
