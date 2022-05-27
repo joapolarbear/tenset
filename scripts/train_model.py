@@ -14,7 +14,8 @@ from tvm.auto_scheduler.utils import to_str_round
 from tvm.auto_scheduler.cost_model import RandomModelInternal
 
 from common import load_and_register_tasks, str2bool, get_task_info_filename
-
+from tune_network import get_network
+    
 from tvm.auto_scheduler import SketchPolicy, extract_tasks
 from tvm.auto_scheduler.feature import get_per_store_features_from_states
 from tvm.auto_scheduler.dataset import Dataset, LearningTask
@@ -32,14 +33,25 @@ from tvm.auto_scheduler.cost_model.metric import (
     random_mix,
 )
 
-def get_sample_records(mod, params, target, number, model):
+def estimate_end2end(mod, params, target, number, model):
     # Extract search tasks
     target = tvm.target.Target(target)
     tasks, task_weights = extract_tasks(mod["main"], params, target)
 
+    # import tvm.auto_scheduler as auto_scheduler
+    # log_file = "tmp.txt"
+    # print("Begin tuning...")
+    # tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
+    # tune_option = auto_scheduler.TuningOptions(
+    #     num_measure_trials=100,  # change this to 20000 to achieve the best performance
+    #     runner=auto_scheduler.LocalRunner(repeat=1, enable_cpu_cache_flush=True),
+    #     measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
+    # )
+    # tuner.tune(tune_option)
+    # raise
+
     rst = 0
     for task_id, task in enumerate(tasks):
-        """Generate a list of random MeasureInput and MeasureResult pairs"""
         policy = SketchPolicy(task, verbose=0)
         states = policy.sample_initial_population()[:number]
 
@@ -56,24 +68,14 @@ def get_sample_records(mod, params, target, number, model):
         #         _ret.append(ret[idx])
         _ret = ret
         assert len(_ret) > 0
-        print(np.mean(_ret), task_weights[task_id])
+        # print(np.mean(_ret), task_weights[task_id])
         rst += np.mean(_ret) * task_weights[task_id]
+
+        # sch, args = task.compute_dag.apply_steps_from_state(state, task.layout_rewrite_option)
     
     return rst
 
 def evaluate_model(model, test_set):
-
-    from tune_network import get_network
-    network_args = {
-        "network": "resnet_50",
-        "batch_size": 1,
-    }
-    target = "cuda"
-    mod, params, inputs = get_network(network_args)
-    ret = get_sample_records(mod, params, target, 1, model)
-    print(ret)
-    raise
-
     # make prediction
     prediction = model.predict(test_set)
 
@@ -119,7 +121,6 @@ def evaluate_model(model, test_set):
     peak_score1 = np.average(peak_score1_list, weights=weights)
     peak_score5 = np.average(peak_score5_list, weights=weights)
 
-
     eval_res = {
         "RMSE": rmse,
         "R^2": r_sqaured,
@@ -128,8 +129,20 @@ def evaluate_model(model, test_set):
         "mape_avg": mape_avg,
         "average peak score@1": peak_score1,
         "average peak score@5": peak_score5,
-        "End2end": ret,
     }
+
+    networks = ["resnet_50", "densenet_121"]
+    bs_s = [1, 32]
+    target = "cuda"
+    for network in networks:
+        for bs in bs_s:
+            network_args = {
+                "network": network,
+                "batch_size": bs,
+            }
+            mod, params, inputs = get_network(network_args)
+            end2end = estimate_end2end(mod, params, target, 1, model)
+            eval_res[f"{network}-bs_{bs}"] = end2end
     return eval_res
 
 
@@ -250,6 +263,11 @@ python3 train_model.py --train-ratio 0.95
 python3 train_model.py \
     --train-ratio 0.95 \
     --models xgb@mlp@tab@random \
+    --use-gpu \
+    --dataset .workspace/dataset.pkl
+python3 train_model.py \
+    --train-ratio 0.95 \
+    --models xgb \
     --use-gpu \
     --dataset .workspace/dataset.pkl
 '''
