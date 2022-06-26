@@ -1,5 +1,6 @@
 from collections import defaultdict, namedtuple
 import pickle
+import os
 
 import tvm
 from tvm import relay, auto_scheduler
@@ -37,10 +38,10 @@ def log_line(record, out_file):
 ####################################
 ##### Dataset Utilities
 ####################################
-
-NETWORK_INFO_FOLDER = 'dataset/network_info'
-TO_MEASURE_PROGRAM_FOLDER = 'dataset/to_measure_programs'
-MEASURE_RECORD_FOLDER = 'dataset/measure_records'
+SCRIPT_DIR = os.path.dirname(__file__)
+NETWORK_INFO_FOLDER = os.path.join(SCRIPT_DIR, 'dataset/network_info')
+TO_MEASURE_PROGRAM_FOLDER = os.path.join(SCRIPT_DIR, 'dataset/to_measure_programs')
+MEASURE_RECORD_FOLDER = os.path.join(SCRIPT_DIR, 'dataset/measure_records')
 
 def clean_name(x):
     x = str(x)
