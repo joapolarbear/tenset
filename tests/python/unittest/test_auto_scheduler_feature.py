@@ -47,7 +47,13 @@ def test_cpu_matmul():
     target = tvm.target.Target("llvm")
     task = auto_scheduler.SearchTask(compute_dag=dag, workload_key="test", target=target)
     names = auto_scheduler.feature.get_per_store_feature_names()
-    fea = auto_scheduler.feature.get_per_store_features_from_states([s], task)[0]
+    fea = auto_scheduler.feature.get_per_store_features_from_states([s], task, parse_ast=False)[0]
+
+    # print("\n")
+    # print(s)
+    # print(dag)
+    print(f"# of feature entries: {len(names)}")
+    print(f"Shape of extracted features: {fea.shape}")
 
     stage_0 = fea[0]
     assert len(stage_0) == len(names), "%d vs %d" % (len(stage_0), len(names))
@@ -204,5 +210,6 @@ def test_gpu_feature():
 
 if __name__ == "__main__":
     test_cpu_matmul()
+    raise
     test_cpu_fusion()
     test_gpu_feature()

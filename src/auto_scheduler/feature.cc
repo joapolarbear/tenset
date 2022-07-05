@@ -604,13 +604,154 @@ std::tuple<ReuseType, float, float, float> ComputeReuse(
   }
 }
 
+/*!
+ * \brief Extract feature from the buffer
+ * \param buffer_features The buffers with features
+ * \param cache_line_size The size of cache line in bytes
+ * \param max_n_bufs The maximum number of extracted buffers for one statement
+ * \param ret The returned feature vector
+ */
+void _GetPerStoreFeatureIplmt(const BufferMap<FeatureSet>& buffer_features, int cache_line_size,
+                              int max_n_bufs, std::vector<float>* ret);
+
+
+// Extract an AST with features
+
+class FeatureASTNode {
+ public:
+  FeatureASTNode(const char* _name, const int node_id)
+      : _node_id(node_id), name(std::string(_name)), parent(nullptr) {}
+  FeatureASTNode(const char* _name)
+      : _node_id(-1), name(std::string(_name)), parent(nullptr) {}
+
+  void AddChild(FeatureASTNode* child) {
+    childs.push_back(child);
+    child->parent = this;
+  }
+
+  void GetFeature(int cache_line_size, int max_n_bufs) {
+    _GetPerStoreFeatureIplmt(buffer_features, cache_line_size, max_n_bufs, &features);
+    buffer_features.clear();
+  }
+
+  std::string to_string() {
+    return std::string("(") + std::to_string(_node_id) + ")" + name;
+  }
+
+  bool IsRoot() {
+    return parent == nullptr;
+  }
+
+  FeatureASTNode* RetParent() { return parent; }
+
+  std::vector<FeatureASTNode*> childs;
+  // Stores FeatureSet for every buffer of each leaf node
+  BufferMap<FeatureSet> buffer_features;
+  std::vector<float> features;
+  int _node_id;
+
+ private:
+  std::string name;
+  FeatureASTNode* parent;
+};
+
+class FeatureAST {
+  public:
+   FeatureAST() { 
+     num_of_node = 0;
+     root = cur_node = new FeatureASTNode("root", num_of_node++);
+   }
+
+   void AddChildAndGoDown(FeatureASTNode* child) {
+     child->_node_id = num_of_node++;
+     if (root == nullptr) {
+       root = child;
+       cur_node = root;
+     } else {
+       cur_node->AddChild(child);
+       cur_node = child;
+     }
+    }
+
+    bool GoUp() {
+      if (cur_node->IsRoot())
+        return false;
+      else {
+        cur_node = cur_node->RetParent();
+        return true;
+      }
+    }
+    void DrawAST(const std::string& prefix, FeatureASTNode* node, bool isLast) {
+      if( node != nullptr ) {
+        std::cout << prefix;
+        std::cout << (isLast ? "└──" : "├──");
+
+        std::cout << node->to_string() << std::endl;
+        for (std::size_t i = 0; i < node->childs.size(); i++) {
+          DrawAST(prefix + (isLast  ? "     " : "|    "), node->childs[i],
+                  i == (node->childs.size() - 1));
+        }
+      }
+    }
+    void DrawAST() {
+      std::cout << "********** AST **********" << std::endl;
+      DrawAST("", root, true);
+    }
+
+    BufferMap<FeatureSet>& CurNodeBufferFeatures() {
+      return cur_node->buffer_features;
+    }
+
+    /** This function stores the given N-ary tree into serialized_tree
+     * Refer to https://www.geeksforgeeks.org/serialize-deserialize-n-ary-tree/
+     */
+    void RecursiveSerialize(FeatureASTNode* tmp_node, std::vector<int>* serialized_tree,
+                            std::vector<std::vector<float>>* ast_features) {
+      // Store current node and recur for its children
+      serialized_tree->push_back(tmp_node->_node_id);
+      // std::cout << "Node" << tmp_node->_node_id << " " 
+      //           << tmp_node->childs.size() << " childs" << std::endl;
+      for (auto child : tmp_node->childs) {
+        RecursiveSerialize(child, serialized_tree, ast_features);
+      }
+      // Store marker at the end of children
+      serialized_tree->push_back(marker_);
+
+      if(tmp_node->childs.size() == 0) {
+        // This is a leaf node
+        if(tmp_node->features.size() > 0) {
+          tmp_node->features.push_back(tmp_node->_node_id);
+          ast_features->push_back(tmp_node->features);
+          tmp_node->features.clear();
+        }
+      }
+    }
+
+    void Serialize(std::vector<int>* serialized_tree,
+                   std::vector<std::vector<float>>* ast_features) {
+      RecursiveSerialize(root, serialized_tree, ast_features);
+    }
+
+  private:
+    FeatureASTNode *root;
+    FeatureASTNode *cur_node;
+    int num_of_node;
+    int marker_{-1};
+};
+
 
 // Extract features for every BufferStore statement
 class PerStoreFeatureExtractor : public StmtExprVisitor {
  public:
-  explicit PerStoreFeatureExtractor(int cache_line_size) : cache_line_size_(cache_line_size) {}
+  explicit PerStoreFeatureExtractor(int cache_line_size, int max_n_bufs, bool parse_ast)
+      : cache_line_size_(cache_line_size), max_n_bufs_(max_n_bufs), parse_ast_(parse_ast) {
+    feature_ast = new FeatureAST();
+  }
 
   void VisitStmt_(const AttrStmtNode* node) final {
+    FeatureASTNode* ast_node = new FeatureASTNode("AttrStmtNode");
+    if (parse_ast_) feature_ast->AddChildAndGoDown(ast_node);
+
     if (node->attr_key == tir::attr::thread_extent || node->attr_key == tir::attr::virtual_thread) {
       const Var& var = node->node.as<IterVarNode>()->var;
       int extent = GetIntImm(node->value);
@@ -667,6 +808,7 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
     } else {
       StmtExprVisitor::VisitStmt_(node);
     }
+    if (parse_ast_) feature_ast->GoUp();
   }
 
   void VisitStmt_(const ForNode* node) final {
@@ -680,11 +822,16 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
       parallel_for_stack_.push_back(node);
     }
 
+    FeatureASTNode* ast_node = new FeatureASTNode("ForNode");
+    if (parse_ast_) feature_ast->AddChildAndGoDown(ast_node);
+    
     outer_loop_prod_ *= loop_extent;
     for_loop_stack_.push_back(node);
     StmtExprVisitor::VisitStmt_(node);
     for_loop_stack_.pop_back();
     outer_loop_prod_ /= loop_extent;
+
+    if (parse_ast_) feature_ast->GoUp();
 
     if (node->kind == ForKind::kVectorized) {
       vec_for_stack_.pop_back();
@@ -696,6 +843,11 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
   }
 
   void VisitStmt_(const BufferStoreNode* node) final {
+    FeatureASTNode* ast_node = new FeatureASTNode("BufferStoreNode");
+    if (parse_ast_) {
+      feature_ast->AddChildAndGoDown(ast_node);
+    }
+
     MathOpCounter math_op_counter;
     math_op_counter(node->value);
     std::vector<float> mem_bytes_list;
@@ -714,20 +866,31 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
 
     // Group 4: Allocation related features
     ExtractOuterScopeFeature(node);
+    
+    if (parse_ast_) {
+      ast_node->GetFeature(cache_line_size_, max_n_bufs_);
+      feature_ast->GoUp();
+    }
   }
 
   void VisitStmt_(const BufferRealizeNode* node) final {
+    FeatureASTNode* ast_node = new FeatureASTNode("BufferRealizeNode");
+    if (parse_ast_) feature_ast->AddChildAndGoDown(ast_node);
+
     StmtExprVisitor::VisitStmt_(node);
 
     // Group 5: Outer scope related features
     ExtractAllocationFeature(node);
+
+    if (parse_ast_) {
+      ast_node->GetFeature(cache_line_size_, max_n_bufs_);
+      feature_ast->GoUp();
+    }
   }
 
   // Extract computation related features (group 1)
-  void ExtractComputationFeature(const BufferStoreNode* node,
-                                 const MathOpCounter& math_op_counter) {
-    FeatureSet& fea = buffer_features[node->buffer];
-
+  void _ExtractComputationFeatureIplmt(FeatureSet& fea, const BufferStoreNode* node,
+                                       const MathOpCounter& math_op_counter) {
     // Computation related features
     fea.float_mad = outer_loop_prod_ * math_op_counter.float_mad;
     fea.float_addsub = outer_loop_prod_ * math_op_counter.float_addsub;
@@ -798,11 +961,11 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
   }
 
   // Extract buffer access related features (group 2)
-  void ExtractBufferAccessFeature(const BufferStoreNode* node, const MathOpCounter& math_op_counter,
-                                  double* cur_compute_ops, std::vector<float>* compute_ops_list,
-                                  std::vector<float>* mem_bytes_list) {
-    FeatureSet& fea = buffer_features[node->buffer];
-
+  void _ExtractBufferAccessFeatureIplmt(FeatureSet& fea, const BufferStoreNode* node,
+                                        const MathOpCounter& math_op_counter,
+                                        double* cur_compute_ops,
+                                        std::vector<float>* compute_ops_list,
+                                        std::vector<float>* mem_bytes_list) {
     // Extract all buffer accesses
     std::vector<BufferAccessFeature> acc_feas;
     BufferAccessExtractor buf_extractor;
@@ -951,11 +1114,10 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
   }
 
   // Extract arithmetic intensity related feature (group 3)
-  void ExtractArithmeticIntensityFeature(const BufferStoreNode* node, double cur_compute_ops,
-                                         const std::vector<float>& compute_ops_list,
-                                         const std::vector<float>& mem_bytes_list) {
-    FeatureSet& fea = buffer_features[node->buffer];
-
+  void _ExtractArithmeticIntensityFeatureIplmt(FeatureSet& fea, const BufferStoreNode* node,
+                                               double cur_compute_ops,
+                                               const std::vector<float>& compute_ops_list,
+                                               const std::vector<float>& mem_bytes_list) {
     // Compute arithmetic intensity curve (y axis : arithmetic intensity, x axis : flops).
     // We use piecewise linear interpolation to fit this curve.
     int pt = 0;
@@ -986,9 +1148,7 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
   }
 
   // Extract allocation related features (group 4)
-  void ExtractAllocationFeature(const BufferRealizeNode* node) {
-    FeatureSet& fea = buffer_features[node->buffer];
-
+  void _ExtractAllocationFeatureIplmt(FeatureSet& fea, const BufferRealizeNode* node) {
     float allocation_size = 1.0f;
     for (const auto& x : node->bounds) {
       allocation_size *= GetIntImm(x->extent);
@@ -1001,16 +1161,69 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
   }
 
   // Extract outer scope related features (group 5)
-  void ExtractOuterScopeFeature(const BufferStoreNode* node) {
-    FeatureSet& fea = buffer_features[node->buffer];
-
+  void _ExtractOuterScopeFeatureIplmt(FeatureSet& fea, const BufferStoreNode* node) {
     fea.outer_prod = outer_loop_prod_;
     fea.num_loops = for_loop_stack_.size();
     fea.auto_unroll_max_step = cur_auto_unroll_max_step_;
   }
 
+  // Extract computation related features (group 1)
+  void ExtractComputationFeature(const BufferStoreNode* node,
+                                 const MathOpCounter& math_op_counter) {
+    if (parse_ast_)
+      _ExtractComputationFeatureIplmt(feature_ast->CurNodeBufferFeatures()[node->buffer], node,
+                                      math_op_counter);
+    else
+      _ExtractComputationFeatureIplmt(buffer_features[node->buffer], node, math_op_counter);
+  }
+
+  // Extract buffer access related features (group 2)
+  void ExtractBufferAccessFeature(const BufferStoreNode* node, const MathOpCounter& math_op_counter,
+                                  double* cur_compute_ops, std::vector<float>* compute_ops_list,
+                                  std::vector<float>* mem_bytes_list) {
+    if (parse_ast_)
+      _ExtractBufferAccessFeatureIplmt(feature_ast->CurNodeBufferFeatures()[node->buffer], node,
+                                       math_op_counter, cur_compute_ops, compute_ops_list,
+                                       mem_bytes_list);
+    else
+      _ExtractBufferAccessFeatureIplmt(buffer_features[node->buffer], node, math_op_counter,
+                                       cur_compute_ops, compute_ops_list, mem_bytes_list);
+  }
+
+  // Extract arithmetic intensity related feature (group 3)
+  void ExtractArithmeticIntensityFeature(const BufferStoreNode* node, double cur_compute_ops,
+                                         const std::vector<float>& compute_ops_list,
+                                         const std::vector<float>& mem_bytes_list) {
+    if (parse_ast_)
+      _ExtractArithmeticIntensityFeatureIplmt(feature_ast->CurNodeBufferFeatures()[node->buffer],
+                                              node, cur_compute_ops, compute_ops_list,
+                                              mem_bytes_list);
+    else
+      _ExtractArithmeticIntensityFeatureIplmt(buffer_features[node->buffer], node, cur_compute_ops,
+                                              compute_ops_list, mem_bytes_list);
+  }
+
+  // Extract allocation related features (group 4)
+  void ExtractAllocationFeature(const BufferRealizeNode* node) {
+    if (parse_ast_)
+      _ExtractAllocationFeatureIplmt(feature_ast->CurNodeBufferFeatures()[node->buffer], node);
+    else
+      _ExtractAllocationFeatureIplmt(buffer_features[node->buffer], node);
+  }
+
+  // Extract outer scope related features (group 5)
+  void ExtractOuterScopeFeature(const BufferStoreNode* node) {
+    if (parse_ast_)
+      _ExtractOuterScopeFeatureIplmt(feature_ast->CurNodeBufferFeatures()[node->buffer], node);
+    else
+      _ExtractOuterScopeFeatureIplmt(buffer_features[node->buffer], node);
+  }
+
   // Stores FeatureSet for every buffer
   BufferMap<FeatureSet> buffer_features;
+
+  // Feature AST
+  FeatureAST* feature_ast;
 
  private:
   // The shared arithmetic analyzer
@@ -1045,19 +1258,20 @@ class PerStoreFeatureExtractor : public StmtExprVisitor {
 
   // The default cache line size in bytes
   const int cache_line_size_ = 64;
+  // The maximum number of extracted buffers for one statement
+  const int max_n_bufs_;
+  const bool parse_ast_;
 };
 
 // shifted log to incorporate the property that slog(0) = 0
 inline float slog(float x) { return x < 0 ? -std::log2(-x + 1) : std::log2(x + 1); }
 
-void GetPerStoreFeature(const Stmt& stmt, int cache_line_size, int max_n_bufs,
+void _GetPerStoreFeatureIplmt(const BufferMap<FeatureSet>& buffer_features, int cache_line_size, int max_n_bufs,
                         std::vector<float>* ret) {
-  PerStoreFeatureExtractor extractor(cache_line_size);
-  extractor(stmt);
 
-  ret->push_back(extractor.buffer_features.size());
+  ret->push_back(buffer_features.size());
 
-  for (const auto& x : extractor.buffer_features) {
+  for (const auto& x : buffer_features) {
     const FeatureSet& fea_set = x.second;
 
     /***** Group 1: Computation related features *****/
@@ -1187,7 +1401,42 @@ void GetPerStoreFeature(const Stmt& stmt, int cache_line_size, int max_n_bufs,
   }
 }
 
-void GetPerStoreFeatureName(int max_n_bufs, std::vector<std::string>* ret) {
+void GetPerStoreFeature(const Stmt& stmt, int cache_line_size, int max_n_bufs, bool parse_ast,
+                        std::vector<float>* ret) {
+  PerStoreFeatureExtractor extractor(cache_line_size, max_n_bufs, parse_ast);
+  extractor(stmt);
+
+  if (parse_ast) {
+    std::vector<int> serialized_tree;
+    std::vector<std::vector<float>> ast_features;
+    extractor.feature_ast->Serialize(&serialized_tree, &ast_features);
+
+    // Check the searialized tree
+    std::cout << "\n\n############# C++ Level Log #############" << std::endl;
+    extractor.feature_ast->DrawAST();
+    std::cout << "Serialized AST: ";
+    for (auto node_id : serialized_tree) std::cout << node_id << " ";
+    std::cout << std::endl;
+
+    // Push the inner header and serialized tree nodes
+    ret->push_back(ast_features.size());
+    ret->push_back(serialized_tree.size());
+    ret->insert(ret->end(), std::make_move_iterator(serialized_tree.begin()),
+                std::make_move_iterator(serialized_tree.end()));
+
+    // Check the features of leaf nodes
+    for (auto features : ast_features) {
+      std::cout << "Node " << features.back() << "'s feature size: " << features.size() - 2
+                << std::endl;
+      ret->insert(ret->end(), std::make_move_iterator(features.begin()),
+                  std::make_move_iterator(features.end()));
+    }
+  } else {
+    _GetPerStoreFeatureIplmt(extractor.buffer_features, cache_line_size, max_n_bufs, ret);
+  }
+}
+
+void GetPerStoreFeatureName(int max_n_bufs, bool parse_ast, std::vector<std::string>* ret) {
   /***** Group 1: Computation related features *****/
   ret->push_back(("float_mad"));
   ret->push_back(("float_addsub"));
@@ -1293,7 +1542,8 @@ void GetPerStoreFeatureName(int max_n_bufs, std::vector<std::string>* ret) {
 }
 
 void GetPerStoreFeaturesWorkerFunc(const SearchTask& task, const State& state, int max_n_bufs,
-                                   std::vector<float>* feature, std::atomic<int>* error_ct) {
+                                   bool parse_ast, std::vector<float>* feature,
+                                   std::atomic<int>* error_ct) {
   te::Schedule sch;
   Array<te::Tensor> tensors;
 
@@ -1360,7 +1610,7 @@ void GetPerStoreFeaturesWorkerFunc(const SearchTask& task, const State& state, i
     ICHECK(it != mod->functions.end());
     const auto& prim_func = (*it).second.as<PrimFuncNode>();
     GetPerStoreFeature(prim_func->body, task->hardware_params->cache_line_bytes, max_n_bufs,
-                       feature);
+                       parse_ast, feature);
   } catch (Error& e) {
     (*error_ct)++;
   }
@@ -1368,36 +1618,36 @@ void GetPerStoreFeaturesWorkerFunc(const SearchTask& task, const State& state, i
 
 void GetPerStoreFeaturesFromStates(const Array<State>& states, const SearchTask& task,
                                    int skip_first_n_feature_extraction, int max_n_bufs,
-                                   std::vector<std::vector<float>>* features) {
+                                   bool parse_ast, std::vector<std::vector<float>>* features) {
   // extract features
   features->assign(states.size(), std::vector<float>());
 
   std::atomic<int> error_ct(0);
 
   support::parallel_for(skip_first_n_feature_extraction, states.size(),
-                        [&task, &states, &max_n_bufs, &features, &error_ct](int i) {
-                          GetPerStoreFeaturesWorkerFunc(task, states[i], max_n_bufs,
+                        [&task, &states, &max_n_bufs, &parse_ast, &features, &error_ct](int i) {
+                          GetPerStoreFeaturesWorkerFunc(task, states[i], max_n_bufs, parse_ast,
                                                         &(*features)[i], &error_ct);
                         });
 }
 
 void GetPerStoreFeaturesFromStates(const Array<State>& states, const std::vector<SearchTask>& tasks,
                                    int skip_first_n_feature_extraction, int max_n_bufs,
-                                   std::vector<std::vector<float>>* features) {
+                                   bool parse_ast, std::vector<std::vector<float>>* features) {
   // extract features
   features->assign(states.size(), std::vector<float>());
 
   std::atomic<int> error_ct(0);
 
   support::parallel_for(skip_first_n_feature_extraction, states.size(),
-                        [&tasks, &states, &max_n_bufs, &features, &error_ct](int i) {
-                          GetPerStoreFeaturesWorkerFunc(tasks[i], states[i], max_n_bufs,
+                        [&tasks, &states, &max_n_bufs, &parse_ast, &features, &error_ct](int i) {
+                          GetPerStoreFeaturesWorkerFunc(tasks[i], states[i], max_n_bufs, parse_ast,
                                                         &(*features)[i], &error_ct);
                         });
 }
 
 void GetPerStoreFeaturesFromFile(const std::string& filename, int max_lines, int max_n_bufs,
-                                 std::vector<std::vector<float>>* features,
+                                 bool parse_ast, std::vector<std::vector<float>>* features,
                                  std::vector<float>* normalized_throughputs,
                                  std::vector<int>* task_ids) {
   Array<State> states;
@@ -1457,13 +1707,13 @@ void GetPerStoreFeaturesFromFile(const std::string& filename, int max_lines, int
     (*normalized_throughputs)[i] = min_costs[(*task_ids)[i]] / (*normalized_throughputs)[i];
   }
 
-  GetPerStoreFeaturesFromStates(states, tasks, 0, max_n_bufs, features);
+  GetPerStoreFeaturesFromStates(states, tasks, 0, max_n_bufs, parse_ast, features);
 }
 
 void GetPerStoreFeaturesFromMeasurePairs(const Array<MeasureInput>& inputs,
                                          const Array<MeasureResult>& results,
                                          int skip_first_n_feature_extraction, int max_n_bufs,
-                                         std::vector<std::vector<float>>* features,
+                                         bool parse_ast, std::vector<std::vector<float>>* features,
                                          std::vector<float>* normalized_throughputs,
                                          std::vector<int>* task_ids,
                                          std::vector<float>* min_costs) {
@@ -1530,7 +1780,7 @@ void GetPerStoreFeaturesFromMeasurePairs(const Array<MeasureInput>& inputs,
   }
 
   GetPerStoreFeaturesFromStates(states, tasks, skip_first_n_feature_extraction, max_n_bufs,
-                                features);
+                                parse_ast, features);
 }
 
 /*
@@ -1568,7 +1818,12 @@ TVMByteArray SerializeFeatures(std::vector<std::vector<float>>&& features,
 
   int n = features.size();
 
-  // serialize sizes
+  /*!
+   * \brief serialize sizes
+   * 1: the number of states
+   * n: n size values, each denotes the size of each state's feature
+   * 3: size of normalized_throughputs, task_ids and min_costs
+   */
   size_t size_vector_size = 1 + n + 3;
   total_bytes += size_vector_size * sizeof(int);
 
@@ -1625,13 +1880,14 @@ TVM_REGISTER_GLOBAL("auto_scheduler.GetPerStoreFeaturesFromFile")
       std::string filename = args[0];
       int max_lines = args[1];
       int max_n_bufs = args[2];
+      bool parse_ast = args[3];
 
       std::vector<std::vector<float>> features;
       std::vector<float> normalized_throughputs;
       std::vector<int> task_ids;
       std::vector<float> min_costs;
 
-      GetPerStoreFeaturesFromFile(filename, max_lines, max_n_bufs, &features,
+      GetPerStoreFeaturesFromFile(filename, max_lines, max_n_bufs, parse_ast, &features,
                                   &normalized_throughputs, &task_ids);
 
       std::vector<char> byte_data;
@@ -1645,6 +1901,9 @@ TVM_REGISTER_GLOBAL("auto_scheduler.GetPerStoreFeaturesFromMeasurePairs")
       Array<MeasureResult> results = args[1];
       int skip_first_n_feature_extraction = args[2];
       int max_n_bufs = args[3];
+      bool parse_ast = args[4];
+
+      std::cout << "Parse_ast " << parse_ast << std::endl;
 
       std::vector<std::vector<float>> features;
       std::vector<float> normalized_throughputs;
@@ -1652,7 +1911,7 @@ TVM_REGISTER_GLOBAL("auto_scheduler.GetPerStoreFeaturesFromMeasurePairs")
       std::vector<float> min_costs;
 
       GetPerStoreFeaturesFromMeasurePairs(inputs, results, skip_first_n_feature_extraction,
-                                          max_n_bufs, &features, &normalized_throughputs,
+                                          max_n_bufs, parse_ast, & features, &normalized_throughputs,
                                           &task_ids, &min_costs);
 
       std::vector<char> byte_data;
@@ -1665,13 +1924,14 @@ TVM_REGISTER_GLOBAL("auto_scheduler.GetPerStoreFeaturesFromStates")
       Array<State> states = args[0];
       SearchTask task = args[1];
       int max_n_bufs = args[2];
+      bool parse_ast = args[3];
 
       std::vector<std::vector<float>> features;
       std::vector<float> normalized_throughputs;
       std::vector<int> task_ids;
       std::vector<float> min_costs;
 
-      GetPerStoreFeaturesFromStates(states, task, 0, max_n_bufs, &features);
+      GetPerStoreFeaturesFromStates(states, task, 0, max_n_bufs, parse_ast, &features);
 
       std::vector<char> byte_data;
       *ret = SerializeFeatures(std::move(features), std::move(normalized_throughputs),
@@ -1681,9 +1941,10 @@ TVM_REGISTER_GLOBAL("auto_scheduler.GetPerStoreFeaturesFromStates")
 TVM_REGISTER_GLOBAL("auto_scheduler.GetPerStoreFeatureNames")
     .set_body([](TVMArgs args, TVMRetValue* ret) {
       int max_n_bufs = args[0];
+      bool parse_ast = args[1];
       std::vector<std::string> names;
 
-      GetPerStoreFeatureName(max_n_bufs, &names);
+      GetPerStoreFeatureName(max_n_bufs, parse_ast, &names);
 
       Array<String> arr;
       for (const auto& x : names) {

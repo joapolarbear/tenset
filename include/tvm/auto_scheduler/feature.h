@@ -45,17 +45,19 @@ namespace auto_scheduler {
  * \param stmt The input lowered TIR statement
  * \param cache_line_size The size of cache line in bytes
  * \param max_n_bufs The maximum number of extracted buffers for one statement
+ * \param parse_ast Parse AST+features if set true
  * \param ret The returned feature vector
  */
-void GetPerStoreFeature(const Stmt& stmt, int cache_line_size, int max_n_bufs,
+void GetPerStoreFeature(const Stmt& stmt, int cache_line_size, int max_n_bufs, bool parse_ast,
                         std::vector<float>* ret);
 
 /*
  * \brief Get the names of elements in the feature vector. Use this for debug and inspection.
  * \param max_n_bufs The maximum number of extracted buffers for one statement
+ * \param parse_ast Parse AST+features if set true
  * \param ret The returned names.
  */
-void GetPerStoreFeatureName(int max_n_bufs, std::vector<std::string>* ret);
+void GetPerStoreFeatureName(int max_n_bufs, bool parse_ast, std::vector<std::string>* ret);
 
 /*!
  * \brief Get per-store feature from states of the same task
@@ -63,12 +65,13 @@ void GetPerStoreFeatureName(int max_n_bufs, std::vector<std::string>* ret);
  * \param task The same search task for all states
  * \param skip_first_n_feature_extraction Skip feature extraction for the first n states
  * \param max_n_bufs The maximum number of extracted buffers for one statement
+ * \param parse_ast Parse AST+features if set true
  * \param features The returned feature vector. The innermost vector contains the
  * feature vectors for all BufferStoreNode statements
  */
 void GetPerStoreFeaturesFromStates(const Array<State>& states, const SearchTask& task,
                                    int skip_first_n_feature_extraction, int max_n_bufs,
-                                   std::vector<std::vector<float> >* features);
+                                   bool parse_ast, std::vector<std::vector<float> >* features);
 
 /*!
  * \brief Get per-store feature from states of different tasks
@@ -76,25 +79,27 @@ void GetPerStoreFeaturesFromStates(const Array<State>& states, const SearchTask&
  * \param tasks The search tasks corresponding to the input states
  * \param skip_first_n_feature_extraction Skip feature extraction for the first n states
  * \param max_n_bufs The maximum number of extracted buffers for one statement
+ * \param parse_ast Parse AST+features if set true
  * \param features The returned feature vector. The innermost vector contains the
  * feature vectors for all BufferStoreNode statements
  */
 void GetPerStoreFeaturesFromStates(const Array<State>& states, const std::vector<SearchTask>& tasks,
                                    int skip_first_n_feature_extraction, int max_n_bufs,
-                                   std::vector<std::vector<float> >* features);
+                                   bool parse_ast, std::vector<std::vector<float> >* features);
 
 /*!
  * \brief Get per-store features from a log file
  * \param filename The name of log file
  * \param max_lines Only read the first n lines of the file
  * \param max_n_bufs The maximum number of extracted buffers for one statement
+ * \param parse_ast Parse AST+features if set true
  * \param features The returned feature vector. The innermost vector contains the
  * feature vectors for all BufferStoreNode statements
  * \param normalized_throughputs The normalized throughputs for all states
  * \param task_ids The task ids for all states
  */
 void GetPerStoreFeaturesFromFile(const std::string& filename, int max_lines, int max_n_bufs,
-                                 std::vector<std::vector<float> >* features,
+                                 bool parse_ast, std::vector<std::vector<float> >* features,
                                  std::vector<float>* normalized_throughputs,
                                  std::vector<int>* task_ids);
 
@@ -104,6 +109,7 @@ void GetPerStoreFeaturesFromFile(const std::string& filename, int max_lines, int
  * \param results The measurement results
  * \param skip_first_n_feature_extraction Skip feature extraction for the first n measurement pairs
  * \param max_n_bufs The maximum number of extracted buffers for one statement
+ * \param parse_ast Parse AST+features if set true
  * \param features The returned feature vector. The innermost vector contains the
  * feature vectors for all BufferStoreNode statements
  * \param normalized_throughputs The normalized throughputs for all states
@@ -112,7 +118,7 @@ void GetPerStoreFeaturesFromFile(const std::string& filename, int max_lines, int
 void GetPerStoreFeaturesFromMeasurePairs(const Array<MeasureInput>& inputs,
                                          const Array<MeasureResult>& results,
                                          int skip_first_n_feature_extraction, int max_n_bufs,
-                                         std::vector<std::vector<float> >* features,
+                                         bool parse_ast, std::vector<std::vector<float> >* features,
                                          std::vector<float>* normalized_throughputs,
                                          std::vector<int>* task_ids);
 

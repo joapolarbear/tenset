@@ -236,6 +236,7 @@ conda/pkg
 
 # dataset files
 scripts/dataset
+scripts/dataset_gpu
 scripts/*.zip
 scripts/today_job.sh
 scripts/progress.txt
