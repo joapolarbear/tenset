@@ -47,6 +47,7 @@ SIZE_OF_FLOAT32 = 4
 
 # Whether to extract AST
 DEFAULT_PARSE_AST = False
+DEBUG_AST = False
 
 def _unpack_basic_feature(size, vec_len, byte_arr, offset, parse_ast=False):
     ''' Unpack the features for one record or one leaf node if AST is parsed 
@@ -177,6 +178,10 @@ def unpack_feature(byte_arr: bytearray, parse_ast: bool) -> Tuple[np.ndarray, np
     for size in sizes[:-3]:
         # For each record
         if parse_ast:
+            if size == 0:
+                # failed during lowering
+                features.append((np.zeros((1, vec_len)), [], []))
+                continue
             # Now, we need to unpack the AST+feature.
             # The format is:
             # {
@@ -188,18 +193,20 @@ def unpack_feature(byte_arr: bytearray, parse_ast: bool) -> Tuple[np.ndarray, np
             n_leaf = struct.unpack_from("f", byte_arr, offset=offset)
             offset += SIZE_OF_FLOAT32
             n_leaf = int(n_leaf[0] + 0.5)
-            print("\n\n############# Python Level Log ############")
-            print(f"n_leaf: {n_leaf}")
 
             serialized_ast_size = struct.unpack_from("f", byte_arr, offset=offset)
             offset += SIZE_OF_FLOAT32
             serialized_ast_size = int(serialized_ast_size[0] + 0.5)
-            print(f"serialized_ast_size: {serialized_ast_size}")
 
             serialized_tree = struct.unpack_from("%df" % serialized_ast_size, byte_arr, offset=offset)
             offset += serialized_ast_size * SIZE_OF_FLOAT32
             serialized_tree = [int(x) for x in serialized_tree]
-            print(f"serialized_tree: {serialized_tree}")
+            
+            if DEBUG_AST:
+                print("\n\n############# Python Level Log ############")
+                print(f"n_leaf: {n_leaf}")
+                print(f"serialized_ast_size: {serialized_ast_size}")
+                print(f"serialized_tree: {serialized_tree}")
 
             leaf_node_feature_size = (size - (1 + 1 + serialized_ast_size)) // n_leaf
             ast_features = []
@@ -213,8 +220,12 @@ def unpack_feature(byte_arr: bytearray, parse_ast: bool) -> Tuple[np.ndarray, np
                     parse_ast=True)
                 ast_features.append(ret_features)
                 node_ids.append(node_id)
-                print(f"Node {node_id}'s feature size: {np.array(ret_features).shape}")
-            features.append((ast_features, node_ids, serialized_tree))
+                if DEBUG_AST:
+                    print(f"Node {node_id}'s feature size: {np.array(ret_features).shape}")
+            features.append((
+                np.array(ast_features),
+                np.array(node_ids),
+                np.array(serialized_tree)))
         else:
             ### In this case, features.shape = []
             offset, ret_features, _ = _unpack_basic_feature(

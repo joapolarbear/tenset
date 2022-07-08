@@ -1410,13 +1410,15 @@ void GetPerStoreFeature(const Stmt& stmt, int cache_line_size, int max_n_bufs, b
     std::vector<int> serialized_tree;
     std::vector<std::vector<float>> ast_features;
     extractor.feature_ast->Serialize(&serialized_tree, &ast_features);
-
+// #define DEBUG_AST_
+#ifdef DEBUG_AST_
     // Check the searialized tree
     std::cout << "\n\n############# C++ Level Log #############" << std::endl;
     extractor.feature_ast->DrawAST();
     std::cout << "Serialized AST: ";
     for (auto node_id : serialized_tree) std::cout << node_id << " ";
     std::cout << std::endl;
+#endif
 
     // Push the inner header and serialized tree nodes
     ret->push_back(ast_features.size());
@@ -1424,10 +1426,12 @@ void GetPerStoreFeature(const Stmt& stmt, int cache_line_size, int max_n_bufs, b
     ret->insert(ret->end(), std::make_move_iterator(serialized_tree.begin()),
                 std::make_move_iterator(serialized_tree.end()));
 
-    // Check the features of leaf nodes
     for (auto features : ast_features) {
+#ifdef DEBUG_AST_
+      // Check the features of leaf nodes
       std::cout << "Node " << features.back() << "'s feature size: " << features.size() - 2
                 << std::endl;
+#endif
       ret->insert(ret->end(), std::make_move_iterator(features.begin()),
                   std::make_move_iterator(features.end()));
     }
@@ -1902,8 +1906,6 @@ TVM_REGISTER_GLOBAL("auto_scheduler.GetPerStoreFeaturesFromMeasurePairs")
       int skip_first_n_feature_extraction = args[2];
       int max_n_bufs = args[3];
       bool parse_ast = args[4];
-
-      std::cout << "Parse_ast " << parse_ast << std::endl;
 
       std::vector<std::vector<float>> features;
       std::vector<float> normalized_throughputs;
