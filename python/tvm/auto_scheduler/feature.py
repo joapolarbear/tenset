@@ -30,6 +30,7 @@ from typing import List, Tuple, Union, Optional
 import struct
 
 import numpy as np
+import os
 
 from .loop_state import State, StateObject
 from .measure import MeasureInput, MeasureResult
@@ -47,7 +48,8 @@ SIZE_OF_FLOAT32 = 4
 
 # Whether to extract AST
 DEFAULT_PARSE_AST = False
-DEBUG_AST = False
+DEBUG_AST = os.environ.get("DEBUG_AST", "0")
+DEBUG_AST = True if DEBUG_AST == "1" else False
 
 def _unpack_basic_feature(size, vec_len, byte_arr, offset, parse_ast=False):
     ''' Unpack the features for one record or one leaf node if AST is parsed 
