@@ -181,6 +181,8 @@ def unpack_feature(byte_arr: bytearray, parse_ast: bool) -> Tuple[np.ndarray, np
         # For each record
         if parse_ast:
             if size == 0:
+                if DEBUG_AST:
+                    print("Failed during lowering")
                 # failed during lowering
                 features.append((np.zeros((1, vec_len)), [], []))
                 continue

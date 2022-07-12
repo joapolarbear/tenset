@@ -1616,6 +1616,9 @@ void GetPerStoreFeaturesWorkerFunc(const SearchTask& task, const State& state, i
     GetPerStoreFeature(prim_func->body, task->hardware_params->cache_line_bytes, max_n_bufs,
                        parse_ast, feature);
   } catch (Error& e) {
+    // LOG(WARNING) << "Fail during lowering:\n"
+    //               << state << "\n"
+    //               << "with: " << e.what() << std::endl;
     (*error_ct)++;
   }
 }
