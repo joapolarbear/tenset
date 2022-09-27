@@ -100,7 +100,7 @@ def get_network_with_key(network_key):
         oshape = output_shape[1:]
         mod, params = relay.testing.dcgan.get_workload(
             batch_size=batch_size, oshape=oshape, layout="NHWC")
-        inputs = [('data', (100,), 'float32')]
+        inputs = [('data', (1, 100), 'float32')]
     else:
         raise ValueError("Invalid name: " + name)
 
