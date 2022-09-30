@@ -1,8 +1,8 @@
-"""Make a dataset file.
+"""Make a dataset file for cost model training.
 
 Usage:
-python3 make_dataset.py dataset/measure_records/e5-2666/*.json
-python3 make_dataset.py dataset/measure_records/e5-2666/*.json --sample-in-files 100
+python3 make_dataset.py dataset/measure_records/t4/*.json
+python3 make_dataset.py dataset/measure_records/t4/*.json --sample-in-files 100
 """
 import argparse
 import glob

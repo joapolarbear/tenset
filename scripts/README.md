@@ -1,6 +1,6 @@
 ## Dataset organization
 
-The dataset is stored under `tvm-cost-model/scripts/dataset` folder.
+The dataset is stored under `<ProjectDir>/scripts/dataset` folder.
 
 - dataset
   - `dataset/network_info`: The metadata for networks
@@ -21,13 +21,29 @@ The dataset is stored under `tvm-cost-model/scripts/dataset` folder.
 ```
 python3 dump_network_info.py
 ```
+The relay IR is stored at `dataset/network_info/{clean_name(network_key)}.relay.pkl` and the task info is stored at `dataset/network_info/{clean_name(network_task_key)}.task.pkl` by task. File `dataset/network_info/all_tasks.pkl` stores all metadata of all tasks
+
 2. (about 30 mins) Dump all programs for measurement
 ```
 python3 dump_programs.py
 ```
+For each task, the results of different 'states/schedulings' are stored at
+`dataset/to_measure_programs/{clean_name(task_key)}.json`
 
 3. Measure all programs
 ```
 python3 measure_programs.py
 ```
+For each task, the measurement results are stored at `dataset/measure_records/{target.model}/{clean_name(task_key)}.json`
 
+## Cost Model Training
+
+1. Create training dataset for cost model training
+```
+python3 make_dataset.py
+```
+
+2. Train the cost model
+```
+python3 train_model.py
+```
