@@ -18,6 +18,7 @@ import glob
 import os
 import pickle
 import time
+import json
 
 from tqdm import tqdm
 import numpy as np
@@ -29,7 +30,8 @@ from common import (
     load_and_register_tasks,
     get_measure_record_filename,
     get_test_measure_record_filename,
-    get_to_measure_filename
+    get_to_measure_filename,
+    get_compare_measure_record_filename
 )
 
 INVALID_TIME_UPPER = 1e10
@@ -114,6 +116,10 @@ def remeasure_and_compare(task_idx, task, target, target_host, batch_size, measu
     log_filename = get_test_measure_record_filename(task, target)
     os.makedirs(os.path.dirname(log_filename), exist_ok=True)
 
+    ### Create a file to store the compare results
+    compare_filename = get_compare_measure_record_filename(task, target)
+    os.makedirs(os.path.dirname(compare_filename), exist_ok=True)
+
     ### Retrieve Tenset dataset corresponding to `task` and `target`
     tenset_log_filename = get_measure_record_filename(task, target)
     tenset_inputs, tenset_results = auto_scheduler.RecordReader(tenset_log_filename).read_lines()
@@ -152,6 +158,7 @@ def remeasure_and_compare(task_idx, task, target, target_host, batch_size, measu
     empty_policy = auto_scheduler.search_policy.EmptyPolicy(task)
 
     # Do measurement
+    results = {"tenset": [], "measure": []}
     for i in range(0, len(inputs), batch_size):
         print(f"===== task: {task_idx}\t programs: {i}/{len(inputs)} =====")
         inp_batch = []
@@ -163,12 +170,17 @@ def remeasure_and_compare(task_idx, task, target, target_host, batch_size, measu
 
         for res_idx in range(len(res_batch)):
             tenset_dur_std = parse_cost(tenset_res_batch[res_idx])
-            print(f"Tenset cost: {tenset_dur_std[0]:.6f}\u00B1{tenset_dur_std[1]:.6f}s")
+            # print(f"Tenset cost: {tenset_dur_std[0]:.6f}\u00B1{tenset_dur_std[1]:.6f}s")
+            results["tenset"].append(tenset_dur_std)
             if res_batch[res_idx].error_no == 0:
                 dur_std = parse_cost(res_batch[res_idx])
-                print(f"Measured cost: {dur_std[0]:.6f}\u00B1{dur_std[1]:.6f}s")
+                # print(f"Measured cost: {dur_std[0]:.6f}\u00B1{dur_std[1]:.6f}s")
+                results["measure"].append(dur_std)
             else:
-                print(f"Measured cost: Error {res_batch[res_idx].error_no}")
+                # print(f"Measured cost: Error {res_batch[res_idx].error_no}")
+                results["measure"].append((INVALID_TIME_UPPER, 0))
+    with open(compare_filename, 'w') as fp:
+        json.dump(results, fp, indent=4)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -202,7 +214,7 @@ if __name__ == "__main__":
             "repeat": 2,
         }
         print(f"########## Task {i}, FLOPs = {task.compute_dag.flop_ct} ##########")
-        print(task.compute_dag)
+        # print(task.compute_dag)
 
         # if task.compute_dag.flop_ct >= 2416443392.0:
         #     measurer_kwargs['repeat'] = 4

@@ -43,6 +43,7 @@ NETWORK_INFO_FOLDER = os.path.join(SCRIPT_DIR, 'dataset/network_info')
 TO_MEASURE_PROGRAM_FOLDER = os.path.join(SCRIPT_DIR, 'dataset/to_measure_programs')
 MEASURE_RECORD_FOLDER = os.path.join(SCRIPT_DIR, 'dataset/measure_records')
 TEST_MEASURE_RECORD_FOLDER = os.path.join(SCRIPT_DIR, 'dataset/test_measure_records')
+COMPARE_MEASURE_RECORD_FOLDER = os.path.join(SCRIPT_DIR, 'dataset/compare_measure_records')
 
 def clean_name(x):
     x = str(x)
@@ -71,6 +72,11 @@ def get_test_measure_record_filename(task, target=None):
     target = target or task.target
     task_key = (task.workload_key, str(target.kind))
     return f"{TEST_MEASURE_RECORD_FOLDER}/{target.model}/{clean_name(task_key)}.json"
+
+def get_compare_measure_record_filename(task, target=None):
+    target = target or task.target
+    task_key = (task.workload_key, str(target.kind))
+    return f"{COMPARE_MEASURE_RECORD_FOLDER}/{target.model}/{clean_name(task_key)}.json"
 
 def load_and_register_tasks():
     tasks = pickle.load(open(f"{NETWORK_INFO_FOLDER}/all_tasks.pkl", "rb"))
