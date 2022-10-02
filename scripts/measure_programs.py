@@ -35,6 +35,7 @@ from common import (
 )
 
 INVALID_TIME_UPPER = 1e10
+PROGRESS_FILE = "progress.txt"
 
 def make_measurer(run_timeout, repeat, number, enable_cpu_cache_flush,
                   verbose, log_filename):
@@ -58,7 +59,7 @@ def remeasure_file(task_idx, task, target, target_host, batch_size, measurer_kwa
     log_filename = get_measure_record_filename(task, target)
     os.makedirs(os.path.dirname(log_filename), exist_ok=True)
 
-    # Make measuer
+    # Make measure
     measurer_kwargs['log_filename'] = log_filename
     measurer = make_measurer(**measurer_kwargs)
 
@@ -124,7 +125,7 @@ def remeasure_and_compare(task_idx, task, target, target_host, batch_size, measu
     tenset_log_filename = get_measure_record_filename(task, target)
     tenset_inputs, tenset_results = auto_scheduler.RecordReader(tenset_log_filename).read_lines()
 
-    # Make measuer
+    # Make measure
     measurer_kwargs['log_filename'] = log_filename
     measurer = make_measurer(**measurer_kwargs)
 
@@ -182,8 +183,46 @@ def remeasure_and_compare(task_idx, task, target, target_host, batch_size, measu
     with open(compare_filename, 'w') as fp:
         json.dump(results, fp, indent=4)
 
+def comapre_analysis(task_idx, task, target):
+    ### Create a file to store the compare results
+    compare_filename = get_compare_measure_record_filename(task, target)
+    os.makedirs(os.path.dirname(compare_filename), exist_ok=True)
+
+    if not os.path.exists(compare_filename):
+        return
+    with open(compare_filename, 'r') as fp:
+        results = json.load(fp)
+
+    tenset_dur, tenset_std = zip(*results["tenset"])
+    measure_dur, measure_std = zip(*results["measure"])
+
+    tenset_dur, tenset_std = np.array(tenset_dur), np.array(tenset_std)
+    measure_dur, measure_std = np.array(measure_dur), np.array(measure_std)
+    assert len(measure_dur.shape) == len(tenset_dur.shape) \
+        and len(measure_dur.shape) == 1 \
+        and len(measure_dur) == len(tenset_dur), \
+            (tenset_dur.shape, measure_dur.shape)
+
+    ### Filter out invalid records
+    indexes = np.where(np.logical_and(measure_dur!=INVALID_TIME_UPPER, tenset_dur != None))[0]
+    tenset_dur, tenset_std = tenset_dur[indexes], tenset_std[indexes]
+    measure_dur, measure_std = measure_dur[indexes], measure_std[indexes]
+
+    ### Filter out unstalbe records
+    std2avg_upper_bound = 0.01
+    indexes = np.where(np.logical_and(tenset_std / tenset_dur < std2avg_upper_bound, 
+                        measure_std / measure_dur < std2avg_upper_bound))[0]
+    _tenset_dur = tenset_dur[indexes]
+    _measure_dur = measure_dur[indexes]
+
+    error = np.mean(np.abs(_measure_dur - _tenset_dur) / _measure_dur) * 100
+    print(f"Task {task_idx}: Discrepancy between Tenset and Measure: {error:.3f}%")
+    return error
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("-o", "--option", type=str, default="measure_compare",
+        choices=["remeasure", "measure_compare", "analysis"])
     parser.add_argument("--target", type=str, required=True)
     parser.add_argument("--target-host", type=str, default=None)
     parser.add_argument("--batch-size", type=int, default=128)
@@ -198,10 +237,11 @@ if __name__ == "__main__":
 
     end_idx = min(args.end_idx, len(tasks))
 
+    error_list = []
     print(f"tasks: range(start={args.start_idx}, end={end_idx}, step={args.step_idx})")
     # Remeasure all tasks
     for i in range(args.start_idx, end_idx, args.step_idx):
-        with open("progress.txt", "a") as fout:
+        with open(PROGRESS_FILE, "a") as fout:
             fout.write(f"Begin {i}/{len(tasks)}: {time.time():.2f}\n")
         task = tasks[i]
 
@@ -213,8 +253,6 @@ if __name__ == "__main__":
             "verbose": 1,
             "repeat": 2,
         }
-        print(f"########## Task {i}, FLOPs = {task.compute_dag.flop_ct} ##########")
-        # print(task.compute_dag)
 
         # if task.compute_dag.flop_ct >= 2416443392.0:
         #     measurer_kwargs['repeat'] = 4
@@ -227,9 +265,28 @@ if __name__ == "__main__":
 
         # Run measurement
         target = tvm.target.Target(args.target)
-        # remeasure_file(i, task, target, args.target_host, args.batch_size, measurer_kwargs)
-        remeasure_and_compare(i, task, target, args.target_host, args.batch_size, measurer_kwargs)
+        if args.option == "remeasure":
+            print(f"########## Task {i}, FLOPs = {task.compute_dag.flop_ct} ##########")
+            # print(task.compute_dag)
+            remeasure_file(i, task, target, args.target_host, args.batch_size, measurer_kwargs)
+        elif args.option == "measure_compare":
+            print(f"########## Task {i}, FLOPs = {task.compute_dag.flop_ct} ##########")
+            # print(task.compute_dag)
+            remeasure_and_compare(i, task, target, args.target_host, args.batch_size, measurer_kwargs)
+            with open(PROGRESS_FILE, "a") as fout:
+                fout.write(f"End {i}/{len(tasks)}: {time.time():.2f}\n")
+        elif args.option == "analysis":
+            error = comapre_analysis(i, task, target)
+            if error:
+                error_list.append(error)
+        else:
+            raise ValueError(f"Invalid option {args.option}")
+    
+    ### Summary
+    if args.option == "analysis":
+        error_list = np.array(error_list)
+        print(f"Discrepancy between Tenset and Measure for {len(error_list)} tasks: "
+            f"{np.mean(error_list):.3f}(\u00B1{np.std(error_list):.3f}) %")
 
-        with open("progress.txt", "a") as fout:
-            fout.write(f"End {i}/{len(tasks)}: {time.time():.2f}\n")
+        
 
