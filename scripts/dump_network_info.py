@@ -61,18 +61,24 @@ def get_network_with_key(network_key):
         os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
         config_dict = {
-            "bert_tiny": transformers.BertConfig(num_hidden_layers=6, hidden_size=512,
-                                                 intermediate_size=2048, num_attention_heads=8),
-            "bert_base": transformers.BertConfig(num_hidden_layers=12, hidden_size=768,
-                                                 intermediate_size=3072, num_attention_heads=12),
-            "bert_medium": transformers.BertConfig(num_hidden_layers=12, hidden_size=1024,
-                                                  intermediate_size=4096, num_attention_heads=16),
-            "bert_large": transformers.BertConfig(num_hidden_layers=24, hidden_size=1024,
-                                                  intermediate_size=4096, num_attention_heads=16),
+            # "bert_tiny": transformers.BertConfig(num_hidden_layers=6, hidden_size=512,
+            #                                      intermediate_size=2048, num_attention_heads=8),
+            # "bert_base": transformers.BertConfig(num_hidden_layers=12, hidden_size=768,
+            #                                      intermediate_size=3072, num_attention_heads=12),
+            # "bert_medium": transformers.BertConfig(num_hidden_layers=12, hidden_size=1024,
+            #                                       intermediate_size=4096, num_attention_heads=16),
+            # "bert_large": transformers.BertConfig(num_hidden_layers=24, hidden_size=1024,
+            #                                       intermediate_size=4096, num_attention_heads=16),
+            "bert_tiny": "prajjwal1/bert-tiny",
+            "bert_base": "bert-base-uncased",
+            "bert_medium": "funnel-transformer/medium",
+            "bert_large": "bert-large-cased",
         }
 
         configuration = config_dict[name]
-        model = transformers.BertModel(configuration)
+        # model = transformers.BertModel(configuration)
+
+        model = transformers.BertModel.from_pretrained(configuration, return_dict=False)
 
         input_shape = args[0]
 
