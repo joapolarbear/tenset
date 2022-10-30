@@ -227,6 +227,22 @@ def get_all_tasks():
 
     return all_tasks
 
+def map_task2network():
+    task2network = {}
+
+    filenames = glob.glob(f"{NETWORK_INFO_FOLDER}/*.task.pkl")
+    filenames.sort()
+
+    for filename in tqdm(filenames):
+        tasks, task_weights = pickle.load(open(filename, "rb"))
+        for t in tasks:
+            newtwork = os.path.basename(filename).split(").task.pkl")[0][1:]
+            if t.workload_key not in task2network:
+                task2network[t.workload_key] = [newtwork]
+            else:
+                task2network[t.workload_key].append(newtwork)
+
+    return task2network
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
