@@ -12,6 +12,7 @@ python3 measure_programs.py --target "llvm -mtriple=aarch64-linux-gnu -mattr=+ne
 python3 measure_programs.py --target "llvm -mtriple=aarch64-linux-gnu -mattr=+neon -model=a72" --other-args "--rpc-device-key rasp4b-64 --rpc-host kraken --rpc-port 9191 --rpc-n-parallel 4"
 
 python3 measure_programs.py --target "cuda --model=t4"
+python3 measure_programs.py --target "cuda --model=v100" -o test_measure
 """
 import argparse
 import glob
@@ -37,9 +38,25 @@ from common import (
 INVALID_TIME_UPPER = 1e10
 PROGRESS_FILE = "progress.txt"
 
+'''
+class MeasureErrorNo(object):
+    """ Error type for MeasureResult. """
+
+    NO_ERROR = 0  # No error
+    INSTANTIATION_ERROR = 1  # Errors happen when apply transform steps from init state
+    COMPILE_HOST = 2  # Errors happen when compiling code on host (e.g., tvm.build)
+    COMPILE_DEVICE = 3  # Errors happen when compiling code on device
+    # (e.g. OpenCL JIT on the device)
+    RUNTIME_DEVICE = 4  # Errors happen when run program on device
+    WRONG_ANSWER = 5  # Answer is wrong when compared to a reference output
+    BUILD_TIMEOUT = 6  # Timeout during compilation
+    RUN_TIMEOUT = 7  # Timeout during run
+    UNKNOWN_ERROR = 8  # Unknown error
+'''
+
 def make_measurer(run_timeout, repeat, number, enable_cpu_cache_flush,
-                  verbose, log_filename):
-    builder = auto_scheduler.measure.LocalBuilder()
+                  verbose, log_filename, build_timeout):
+    builder = auto_scheduler.measure.LocalBuilder(timeout=build_timeout)
     runner = auto_scheduler.measure.LocalRunner(
         timeout=run_timeout, repeat=repeat, number=number,
         enable_cpu_cache_flush=enable_cpu_cache_flush)
@@ -51,14 +68,7 @@ def make_measurer(run_timeout, repeat, number, enable_cpu_cache_flush,
     )
     return measurer
 
-
-def remeasure_file(task_idx, task, target, target_host, batch_size, measurer_kwargs):
-    raise ValueError("Do not allow to override existing measure_records")
-    # Make folder and log filename
-    target = tvm.target.Target(target)
-    log_filename = get_measure_record_filename(task, target)
-    os.makedirs(os.path.dirname(log_filename), exist_ok=True)
-
+def _measure_file(log_filename, task_idx, task, target, target_host, batch_size, measurer_kwargs):
     # Make measure
     measurer_kwargs['log_filename'] = log_filename
     measurer = make_measurer(**measurer_kwargs)
@@ -76,6 +86,14 @@ def remeasure_file(task_idx, task, target, target_host, batch_size, measurer_kwa
     )
     empty_policy = auto_scheduler.search_policy.EmptyPolicy(task)
 
+    stat = {
+        "task_idx": task_idx,
+        "filename": log_filename,
+        "total_num": len(inputs),
+        "workload_key": task.workload_key,
+        "counter": [0] * 9 # each entry corresponds to one auto_scheduler.measure.MeasureErrorNo
+    }
+
     # Do measurement
     for i in range(0, len(inputs), batch_size):
         print(f"===== task: {task_idx}\t programs: {i}/{len(inputs)} =====")
@@ -86,8 +104,25 @@ def remeasure_file(task_idx, task, target, target_host, batch_size, measurer_kwa
 
         timeout_ct = 0
         for res in res_batch:
-            if res.error_no == auto_scheduler.measure.MeasureErrorNo.BUILD_TIMEOUT:
-                timeout_ct += 1
+            stat["counter"][res.error_no] += 1   
+    return stat
+
+def remeasure_file(task_idx, task, target, target_host, batch_size, measurer_kwargs):
+    raise ValueError("Do not allow to override existing measure_records")
+    # Make folder and log filename
+    target = tvm.target.Target(target)
+    log_filename = get_measure_record_filename(task, target)
+    os.makedirs(os.path.dirname(log_filename), exist_ok=True)
+
+    return _measure_file(log_filename, task_idx, task, target, target_host, batch_size, measurer_kwargs)
+    
+def test_measure_file(task_idx, task, target, target_host, batch_size, measurer_kwargs):
+    # Make folder and log filename
+    target = tvm.target.Target(target)
+    log_filename = get_test_measure_record_filename(task, target)
+    os.makedirs(os.path.dirname(log_filename), exist_ok=True)
+
+    return _measure_file(log_filename, task_idx, task, target, target_host, batch_size, measurer_kwargs)
 
 def check_same_task(input1, input2):
     '''Check whether two inputs belong to the same states'''
@@ -221,8 +256,8 @@ def comapre_analysis(task_idx, task, target):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-o", "--option", type=str, default="measure_compare",
-        choices=["remeasure", "measure_compare", "analysis"])
+    parser.add_argument("-o", "--option", type=str, default="test_measure",
+        choices=["remeasure", "measure_compare", "analysis", "test_measure"])
     parser.add_argument("--target", type=str, required=True)
     parser.add_argument("--target-host", type=str, default=None)
     parser.add_argument("--batch-size", type=int, default=128)
@@ -236,39 +271,73 @@ if __name__ == "__main__":
     tasks = load_and_register_tasks()
 
     end_idx = min(args.end_idx, len(tasks))
+    target = tvm.target.Target(args.target)
 
     error_list = []
     print(f"tasks: range(start={args.start_idx}, end={end_idx}, step={args.step_idx})")
+
+    # Set measurement arguments
+    measurer_kwargs = {
+        "build_timeout": 60,
+        "run_timeout": 60,
+        "number": 2,
+        "enable_cpu_cache_flush": (target.kind == "llvm"),
+        "verbose": 1,
+        "repeat": 2,
+    }
+    # if task.compute_dag.flop_ct >= 2416443392.0:
+    #     measurer_kwargs['repeat'] = 4
+    # elif task.compute_dag.flop_ct >= 834928640.0:
+    #     measurer_kwargs['repeat'] = 6
+    # elif task.compute_dag.flop_ct <= 2097152.0:
+    #     measurer_kwargs['repeat'] = 10
+    # else:
+    #     measurer_kwargs['repeat'] = 8
+    
+    ### Init measure statistics
+    if args.option == "remeasure":
+        task_measure_stat_path = os.path.join(os.path.dirname(get_measure_record_filename(tasks[0], target)),
+            "measure_stat.json")
+    elif args.option == "test_measure":
+        task_measure_stat_path = os.path.join(os.path.dirname(get_test_measure_record_filename(tasks[0], target)),
+            "measure_stat.json")
+    else:
+        task_measure_stat_path = None
+    
+    task_measure_stat_dict = []
+    if task_measure_stat_path:
+        os.makedirs(os.path.dirname(task_measure_stat_path), exist_ok=True)
+        if os.path.exists(task_measure_stat_path):
+            with open(task_measure_stat_path, 'r') as fp:
+                task_measure_stat_dict = json.load(fp)
+            print(f"Load cached task measure statistic info from {task_measure_stat_path}")
+
     # Remeasure all tasks
     for i in range(args.start_idx, end_idx, args.step_idx):
-        with open(PROGRESS_FILE, "a") as fout:
-            fout.write(f"Begin {i}/{len(tasks)}: {time.time():.2f}\n")
+        if task_measure_stat_path and i < len(task_measure_stat_dict):
+            couter = task_measure_stat_dict[i]["counter"]
+            valid_measure_num = couter[auto_scheduler.measure.MeasureErrorNo.NO_ERROR]
+            if valid_measure_num / task_measure_stat_dict[i]["total_num"] >= 0.25 and valid_measure_num > 100:
+                ### Measured: skipped
+                print(f"\nSkip task {i}\n")
+                continue
+
+        if args.option == "measure_compare":
+            with open(PROGRESS_FILE, "a") as fout:
+                fout.write(f"Begin {i}/{len(tasks)}: {time.time():.2f}\n")
+
         task = tasks[i]
 
-        # Set measurement arguments
-        measurer_kwargs = {
-            "run_timeout": 15,
-            "number": 2,
-            "enable_cpu_cache_flush": (task.target.kind == "llvm"),
-            "verbose": 1,
-            "repeat": 2,
-        }
-
-        # if task.compute_dag.flop_ct >= 2416443392.0:
-        #     measurer_kwargs['repeat'] = 4
-        # elif task.compute_dag.flop_ct >= 834928640.0:
-        #     measurer_kwargs['repeat'] = 6
-        # elif task.compute_dag.flop_ct <= 2097152.0:
-        #     measurer_kwargs['repeat'] = 10
-        # else:
-        #     measurer_kwargs['repeat'] = 8
-
         # Run measurement
-        target = tvm.target.Target(args.target)
+        
+        task_measure_stat = None
         if args.option == "remeasure":
             print(f"########## Task {i}, FLOPs = {task.compute_dag.flop_ct} ##########")
             # print(task.compute_dag)
-            remeasure_file(i, task, target, args.target_host, args.batch_size, measurer_kwargs)
+            task_measure_stat = remeasure_file(i, task, target, args.target_host, args.batch_size, measurer_kwargs)
+        elif args.option == "test_measure":
+            print(f"########## Task {i}, FLOPs = {task.compute_dag.flop_ct} ##########")
+            task_measure_stat = test_measure_file(i, task, target, args.target_host, args.batch_size, measurer_kwargs)
         elif args.option == "measure_compare":
             print(f"########## Task {i}, FLOPs = {task.compute_dag.flop_ct} ##########")
             # print(task.compute_dag)
@@ -281,6 +350,12 @@ if __name__ == "__main__":
                 error_list.append(error)
         else:
             raise ValueError(f"Invalid option {args.option}")
+            
+        if task_measure_stat and task_measure_stat_path:
+            task_measure_stat_dict.append(task_measure_stat)
+            assert task_measure_stat_path is not None
+            with open(task_measure_stat_path, 'w') as fp:
+                json.dump(task_measure_stat_dict, fp, indent=4)
     
     ### Summary
     if args.option == "analysis":
@@ -288,5 +363,10 @@ if __name__ == "__main__":
         print(f"Discrepancy between Tenset and Measure for {len(error_list)} tasks: "
             f"{np.mean(error_list):.3f}(\u00B1{np.std(error_list):.3f}) %")
 
-        
 
+# import os
+# _dir = os.path.abspath(os.curdir)
+# for _file in os.listdir(_dir):
+#     filename = os.path.join(_dir, _file)
+#     inputs, results = auto_scheduler.RecordReader(filename).read_lines()
+#     print(len(results), len([r for r in results if r.error_no == 0]))
