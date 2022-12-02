@@ -20,6 +20,7 @@ import os
 import pickle
 import time
 import json
+from typing import List
 
 from tqdm import tqdm
 import numpy as np
@@ -88,7 +89,7 @@ def _measure_file(log_filename, task_idx, task, target, target_host, batch_size,
 
     stat = {
         "task_idx": task_idx,
-        "filename": log_filename,
+        "filename": os.path.basename(log_filename),
         "total_num": len(inputs),
         "workload_key": task.workload_key,
         "counter": [0] * 9 # each entry corresponds to one auto_scheduler.measure.MeasureErrorNo
@@ -272,6 +273,12 @@ if __name__ == "__main__":
 
     end_idx = min(args.end_idx, len(tasks))
     target = tvm.target.Target(args.target)
+    
+    ### Check the device model
+    from utils.gpu_utils import get_gpu_name
+    gpu_model = get_gpu_name()[0].lower()
+    assert gpu_model == target.model, \
+        f"{target.model} is required, but {gpu_model} is used"
 
     error_list = []
     print(f"tasks: range(start={args.start_idx}, end={end_idx}, step={args.step_idx})")
@@ -304,17 +311,17 @@ if __name__ == "__main__":
     else:
         task_measure_stat_path = None
     
-    task_measure_stat_dict = []
+    task_measure_stat_dict: List = [None] * len(tasks)
     if task_measure_stat_path:
         os.makedirs(os.path.dirname(task_measure_stat_path), exist_ok=True)
         if os.path.exists(task_measure_stat_path):
             with open(task_measure_stat_path, 'r') as fp:
-                task_measure_stat_dict = json.load(fp)
+                task_measure_stat_dict: List = json.load(fp)
             print(f"Load cached task measure statistic info from {task_measure_stat_path}")
 
     # Remeasure all tasks
     for i in range(args.start_idx, end_idx, args.step_idx):
-        if task_measure_stat_path and i < len(task_measure_stat_dict):
+        if task_measure_stat_path and task_measure_stat_dict[i]:
             couter = task_measure_stat_dict[i]["counter"]
             valid_measure_num = couter[auto_scheduler.measure.MeasureErrorNo.NO_ERROR]
             if valid_measure_num / task_measure_stat_dict[i]["total_num"] >= 0.25 and valid_measure_num > 100:
@@ -352,7 +359,7 @@ if __name__ == "__main__":
             raise ValueError(f"Invalid option {args.option}")
             
         if task_measure_stat and task_measure_stat_path:
-            task_measure_stat_dict.append(task_measure_stat)
+            task_measure_stat_dict[i] = task_measure_stat
             assert task_measure_stat_path is not None
             with open(task_measure_stat_path, 'w') as fp:
                 json.dump(task_measure_stat_dict, fp, indent=4)
@@ -364,9 +371,30 @@ if __name__ == "__main__":
             f"{np.mean(error_list):.3f}(\u00B1{np.std(error_list):.3f}) %")
 
 
+### Check the measured records
 # import os
 # _dir = os.path.abspath(os.curdir)
 # for _file in os.listdir(_dir):
 #     filename = os.path.join(_dir, _file)
 #     inputs, results = auto_scheduler.RecordReader(filename).read_lines()
 #     print(len(results), len([r for r in results if r.error_no == 0]))
+
+
+### Correct the format of measure_stat.json
+# import os
+# import sys
+# sys.path.append("/root/cross-device-perf-predictor/3rdparty/tenset/")
+# sys.path.append("/root/cross-device-perf-predictor/3rdparty/tenset/scripts")
+
+# xxx
+
+# tasks = load_and_register_tasks()
+# _path = os.path.join(os.getcwd(), "measure_stat.json")
+# _path = "/root/cross-device-perf-predictor/3rdparty/tenset/scripts/dataset_gpu/test_measure_records/a10/measure_stat.json"
+# task_measure_stat_dict = json.load(open(_path, 'r'))
+# new = [None] * len(tasks)
+# for _stat in task_measure_stat_dict:
+#     task_idx = _stat["task_idx"]
+#     new[task_idx] = _stat
+# with open(_path + ".new", 'w') as fp:
+#     json.dump(new, fp, indent=4)
