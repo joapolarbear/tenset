@@ -274,11 +274,13 @@ if __name__ == "__main__":
     end_idx = min(args.end_idx, len(tasks))
     target = tvm.target.Target(args.target)
     
-    ### Check the device model
+    ### Check the device model and utilization
     from utils.gpu_utils import get_gpu_name
     gpu_model = get_gpu_name()[0].lower()
     assert gpu_model == target.model, \
         f"{target.model} is required, but {gpu_model} is used"
+    from utils.gpu_utils import check_gpu_util
+    check_gpu_util()
 
     error_list = []
     print(f"tasks: range(start={args.start_idx}, end={end_idx}, step={args.step_idx})")
