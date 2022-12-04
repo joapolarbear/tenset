@@ -326,7 +326,8 @@ if __name__ == "__main__":
         if task_measure_stat_path and task_measure_stat_dict[i]:
             couter = task_measure_stat_dict[i]["counter"]
             valid_measure_num = couter[auto_scheduler.measure.MeasureErrorNo.NO_ERROR]
-            if valid_measure_num / task_measure_stat_dict[i]["total_num"] >= 0.25 and valid_measure_num > 100:
+            if valid_measure_num / task_measure_stat_dict[i]["total_num"] >= 0.25 and \
+                    (valid_measure_num > 100 or task_measure_stat_dict[i]["total_num"] < 100):
                 ### Measured: skipped
                 print(f"\nSkip task {i}\n")
                 continue
