@@ -6,15 +6,11 @@ import random
 import torch
 import numpy as np
 
-import tvm
-from tvm.auto_scheduler.utils import to_str_round
-from tvm.auto_scheduler.cost_model import RandomModelInternal
 
 from common import load_and_register_tasks
 
-from tvm.auto_scheduler.dataset import Dataset, LearningTask
-from tvm.auto_scheduler.cost_model.xgb_model import XGBModelInternal
-from tvm.auto_scheduler.cost_model.metric import (
+from tvm.auto_scheduler.utils import to_str_round
+from tenset_cost_model.metric import (
     metric_rmse,
     metric_r_squared,
     metric_pairwise_comp_accuracy,
@@ -22,6 +18,7 @@ from tvm.auto_scheduler.cost_model.metric import (
     metric_peak_score,
     random_mix,
 )
+from tenset_cost_model.cost_model import XGBModelInternal, RandomModelInternal
 
 
 def evaluate_model(model, test_set):
@@ -69,8 +66,8 @@ def make_model(name):
     """Make model according to a name"""
     if name == "xgb":
         return XGBModelInternal()
-    elif name == "mlp":
-        return MLPModelInternal()
+    # elif name == "mlp":
+    #     return MLPModelInternal()
     elif name == "random":
         return RandomModelInternal()
     else:

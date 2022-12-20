@@ -8,8 +8,7 @@ import argparse
 import glob
 import random
 
-from tvm import auto_scheduler
-
+from tenset_cost_model.dataset import make_dataset_from_log_file
 from common import load_and_register_tasks
 
 
@@ -29,6 +28,6 @@ if __name__ == "__main__":
         random.seed(args.seed)
         files = random.sample(files, args.sample_in_files)
 
-    auto_scheduler.dataset.make_dataset_from_log_file(
-        files, args.out_file, args.min_sample_size)
+    print(files)
+    make_dataset_from_log_file(files, args.out_file, args.min_sample_size)
 
