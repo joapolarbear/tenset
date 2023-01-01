@@ -1,0 +1,56 @@
+Arguments: Namespace(dataset='.workspace/tenset_dataset.pkl', models='xgb@random', seed=0, split_scheme='within_task', train_ratio=0.8)
+Load all tasks...
+Load dataset...
+Train set: 3200. Task 0 = LearningTask(workload_key='["8a830aeb28cc45b189200eb204fd8825", 8, 30, 30, 512, 1, 1, 512, 256, 1, 1, 1, 256, 8, 30, 30, 256]', target='cuda -keys=cuda,gpu -arch=sm_75 -max_num_threads=1024 -max_threads_per_block=1024 -registers_per_block=65536 -shared_memory_per_block=49152 -thread_warp_size=32')
+Test set:  800. Task 0 = LearningTask(workload_key='["8a830aeb28cc45b189200eb204fd8825", 8, 30, 30, 512, 1, 1, 512, 256, 1, 1, 1, 256, 8, 30, 30, 256]', target='cuda -keys=cuda,gpu -arch=sm_75 -max_num_threads=1024 -max_threads_per_block=1024 -registers_per_block=65536 -shared_memory_per_block=49152 -thread_warp_size=32')
+Fit a xgb booster. Train size: 3200
+Save model to xgb.pkl
+Test set sizes: [800]
+xgb {'RMSE': '0.094440', 'R^2': '0.716802', 'mape_avg': '1.424554', 'pairwise comparision accuracy': '0.829124', 'average peak score@1': '0.895286', 'average peak score@5': '0.979057'}
+Save model to random.pkl
+Test set sizes: [800]
+random {'RMSE': '0.525346', 'R^2': '-7.763345', 'mape_avg': '1.019867', 'pairwise comparision accuracy': '0.505357', 'average peak score@1': '0.086881', 'average peak score@5': '0.086881'}
+------------------------------------------------------------
+Model: xgb
+RMSE: 0.0944
+R^2: 0.7168
+mape_avg: 1.4246
+pairwise comparision accuracy: 0.8291
+average peak score@1: 0.8953
+average peak score@5: 0.9791
+------------------------------------------------------------
+Model: random
+RMSE: 0.5253
+R^2: -7.7633
+mape_avg: 1.0199
+pairwise comparision accuracy: 0.5054
+average peak score@1: 0.0869
+average peak score@5: 0.0869
+Arguments: Namespace(dataset='.workspace/tenset_dataset.pkl', models='xgb@random', seed=0, split_scheme='within_task', train_ratio=0.8)
+Load all tasks...
+Load dataset...
+Train set: 3200. Task 0 = LearningTask(workload_key='["8a830aeb28cc45b189200eb204fd8825", 8, 30, 30, 512, 1, 1, 512, 256, 1, 1, 1, 256, 8, 30, 30, 256]', target='cuda -keys=cuda,gpu -arch=sm_75 -max_num_threads=1024 -max_threads_per_block=1024 -registers_per_block=65536 -shared_memory_per_block=49152 -thread_warp_size=32')
+Test set:  800. Task 0 = LearningTask(workload_key='["8a830aeb28cc45b189200eb204fd8825", 8, 30, 30, 512, 1, 1, 512, 256, 1, 1, 1, 256, 8, 30, 30, 256]', target='cuda -keys=cuda,gpu -arch=sm_75 -max_num_threads=1024 -max_threads_per_block=1024 -registers_per_block=65536 -shared_memory_per_block=49152 -thread_warp_size=32')
+Fit a xgb booster. Train size: 3200
+Save model to xgb.pkl
+Test set sizes: [800]
+xgb {'RMSE': '0.094440', 'R^2': '0.716802', 'mape_avg': '1.424554', 'pairwise comparision accuracy': '0.829124', 'average peak score@1': '0.895286', 'average peak score@5': '0.979057'}
+Save model to random.pkl
+Test set sizes: [800]
+random {'RMSE': '0.525346', 'R^2': '-7.763345', 'mape_avg': '1.019867', 'pairwise comparision accuracy': '0.505357', 'average peak score@1': '0.086881', 'average peak score@5': '0.086881'}
+------------------------------------------------------------
+Model: xgb
+RMSE: 0.0944
+R^2: 0.7168
+mape_avg: 1.4246
+pairwise comparision accuracy: 0.8291
+average peak score@1: 0.8953
+average peak score@5: 0.9791
+------------------------------------------------------------
+Model: random
+RMSE: 0.5253
+R^2: -7.7633
+mape_avg: 1.0199
+pairwise comparision accuracy: 0.5054
+average peak score@1: 0.0869
+average peak score@5: 0.0869

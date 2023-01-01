@@ -6,8 +6,8 @@ import random
 import torch
 import numpy as np
 
-
-from common import load_and_register_tasks
+import tvm
+from common import load_and_register_tasks, get_task_info_filename
 
 from tvm.auto_scheduler.utils import to_str_round
 from tenset_cost_model.metric import (
@@ -16,6 +16,7 @@ from tenset_cost_model.metric import (
     metric_pairwise_comp_accuracy,
     metric_top_k_recall,
     metric_peak_score,
+    metric_mape,
     random_mix,
 )
 from tenset_cost_model.cost_model import XGBModelInternal, RandomModelInternal
@@ -30,13 +31,25 @@ def evaluate_model(model, test_set):
     weights = [len(test_set.throughputs[t]) for t in tasks]
     print("Test set sizes:", weights)
 
+    
     rmse_list = []
     r_sqaured_list = []
     pair_acc_list = []
     peak_score1_list = []
     peak_score5_list = []
+    # add mape
+    mape_list = []
+    mape_avg_list = []
 
     for task in tasks:
+
+        ### Calculate flop_cnt
+        file_name = get_task_info_filename(task.workload_key, tvm.target.Target(task.target))
+        file_name = file_name.replace("network_info", "to_measure_programs").replace("task.pkl", "json")
+        inputs, _ = tvm.auto_scheduler.RecordReader(file_name).read_lines()
+        search_task = tvm.auto_scheduler.measure.recover_measure_input(inputs[0]).task
+        flop_ct = search_task.compute_dag.flop_ct
+
         preds = prediction[task]
         labels = test_set.throughputs[task]
 
@@ -45,16 +58,24 @@ def evaluate_model(model, test_set):
         pair_acc_list.append(metric_pairwise_comp_accuracy(preds, labels))
         peak_score1_list.append(metric_peak_score(preds, labels, 1))
         peak_score5_list.append(metric_peak_score(preds, labels, 5))
+        # add mape
+        mape_list.append(metric_mape(preds, labels))
+        mape_avg_list.append(metric_mape(flop_ct/preds, flop_ct/labels))
 
     rmse = np.sqrt(np.average(rmse_list, weights=weights))
     r_sqaured = np.average(r_sqaured_list, weights=weights)
     pair_acc = np.average(pair_acc_list, weights=weights)
     peak_score1 = np.average(peak_score1_list, weights=weights)
     peak_score5 = np.average(peak_score5_list, weights=weights)
-
+    # add mape
+    mape = np.average(mape_list, weights=weights)
+    mape_avg = np.average(mape_avg_list, weights=weights)
+    
     eval_res = {
         "RMSE": rmse,
         "R^2": r_sqaured,
+        # "mape": mape,
+        "mape_avg": mape_avg,
         "pairwise comparision accuracy": pair_acc,
         "average peak score@1": peak_score1,
         "average peak score@5": peak_score5,
