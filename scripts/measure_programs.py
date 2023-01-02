@@ -112,7 +112,7 @@ def remeasure_file(task_idx, task, target, target_host, batch_size, measurer_kwa
     raise ValueError("Do not allow to override existing measure_records")
     # Make folder and log filename
     target = tvm.target.Target(target)
-    log_filename = get_measure_record_filename(task, target)
+    log_filename = get_measure_record_filename(task, target) # give task and target
     os.makedirs(os.path.dirname(log_filename), exist_ok=True)
 
     return _measure_file(log_filename, task_idx, task, target, target_host, batch_size, measurer_kwargs)
