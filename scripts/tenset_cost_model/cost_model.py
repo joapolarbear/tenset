@@ -372,6 +372,7 @@ def custom_callback(stopping_rounds, metric, fevals, evals=(), log_file=None,
                 env.model.set_attr(best_score=str(state['best_score']),
                                    best_iteration=str(state['best_iteration']),
                                    best_msg=state['best_msg'])
+
         elif env.iteration - best_iteration >= stopping_rounds:
             best_msg = state.get('best_msg', "")
             timer['end'] = time.time()
@@ -524,11 +525,14 @@ class XGBModelInternal:
         else:
             eval_sets = [(dtrain, "tr")]
 
+        import time 
+        start = time.time()
+        num_boost_round_ = 300
         # Train a new model
         bst = xgb.train(
             params=self.xgb_params,
             dtrain=dtrain,
-            num_boost_round=300,
+            num_boost_round=num_boost_round_,
             obj=pack_sum_square_error,
             callbacks=[
                 custom_callback(
@@ -541,6 +545,8 @@ class XGBModelInternal:
                 )
             ],
         )
+        end_cost = time.time() - start
+        logger.debug(f"Run All, Dur: {end_cost}, Throughput: {end_cost / num_boost_round_}")
         return bst
 
     def _predict_a_dataset(self, model, dataset):
