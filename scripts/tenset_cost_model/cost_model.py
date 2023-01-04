@@ -266,6 +266,8 @@ def custom_callback(stopping_rounds, metric, fevals, evals=(), log_file=None,
     """Callback function for xgboost to support multiple custom evaluation functions"""
     from xgboost.core import EarlyStopException
     from xgboost.callback import _fmt_metric
+    import time 
+
 
     try:
         from xgboost.training import aggcv
@@ -274,10 +276,12 @@ def custom_callback(stopping_rounds, metric, fevals, evals=(), log_file=None,
 
     state = {}
     metric_shortname = metric.split("-")[1]
-
+    timer = {}
     def init(env):
         """internal function"""
         bst = env.model
+
+        timer['start'] = time.time()
 
         state['maximize_score'] = maximize
         state['best_iteration'] = 0
@@ -370,8 +374,13 @@ def custom_callback(stopping_rounds, metric, fevals, evals=(), log_file=None,
                                    best_msg=state['best_msg'])
         elif env.iteration - best_iteration >= stopping_rounds:
             best_msg = state.get('best_msg', "")
+            timer['end'] = time.time()
+            timer['dur'] = timer['end'] - timer['start']
+            timer['throughput'] = timer['dur'] / env.iteration
             if verbose_eval and env.rank == 0:
                 logger.debug("XGB stopped. Best iteration: %s ", best_msg)
+                logger.debug("Throughput Data: %s ", timer)
+            
             raise EarlyStopException(best_iteration)
 
     return callback
