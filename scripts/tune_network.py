@@ -9,7 +9,7 @@ import numpy as np
 
 import tvm
 from tvm import relay, auto_scheduler
-import tvm.contrib.graph_runtime as runtime
+from tvm.contrib import graph_executor
 from tvm.auto_scheduler.utils import to_str_round
 
 from dump_network_info import get_network_with_key
@@ -44,6 +44,14 @@ def get_tuning_option(tuning_args, target):
                 timeout=run_timeout, repeat=10, number=1, enable_cpu_cache_flush=True),
             measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
         )
+    elif "cuda" in target.keys:
+        # measure_ctx = auto_scheduler.LocalRPCMeasureContext(repeat=1, min_repeat_ms=300, timeout=run_timeout)
+        tuning_opt = auto_scheduler.TuningOptions(
+            num_measure_trials=n_trials,
+            runner=auto_scheduler.LocalRunner(
+                timeout=run_timeout, repeat=10, number=1, enable_cpu_cache_flush=False),
+            measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
+        )
     else:
         raise NotImplementedError
 
@@ -56,9 +64,9 @@ def tune_and_evaluate(network_args, tuning_args, target, target_host, result_fil
     # Do auto-tuning
     if not tuning_args['eval_only']:
         # Delete existing log file to avoid reusing old measurement records
-        if not tuning_args['continue_tuning'] and os.path.exists(log_file):
-            print("Delete the existing log file %s" % log_file)
-            os.system("rm -rf %s" % log_file)
+        if not tuning_args['continue_tuning'] and os.path.exists(tuning_args['log_file']):
+            print("Delete the existing log file %s" % tuning_args['log_file'])
+            os.system("rm -rf %s" % tuning_args['log_file'])
 
         # Extract search tasks
         tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
@@ -68,24 +76,36 @@ def tune_and_evaluate(network_args, tuning_args, target, target_host, result_fil
                 "========== Task %d  (workload key: %s...) =========="
                 % (idx, task.workload_key[:20])
             )
-            print(task.compute_dag)
+            # print(task.compute_dag)
 
         tuning_opt = get_tuning_option(tuning_args, target)
 
+        callbacks = [
+            auto_scheduler.task_scheduler.PrintTableInfo(),
+            auto_scheduler.task_scheduler.LogEstimatedLatency(tuning_args['log_file'].replace(".json", ".tsv")),
+        ]
+
         # Run search
-        tuner = auto_scheduler.TaskScheduler(tasks, task_weights,
-            load_model_file=tuning_args['load_model'])
-        policy = 'sketch.%s' % tuning_args['cost_model']
-        tuner.tune(tuning_opt, search_policy=policy)
+        tuner = auto_scheduler.TaskScheduler(
+            tasks, task_weights,
+            load_model_file=tuning_args['load_model'],
+            callbacks=callbacks)
+        if isinstance(tuning_args['cost_model'], str):
+            policy = 'sketch.%s' % tuning_args['cost_model']
+            tuner.tune(tuning_opt, search_policy=policy)
+        else:
+            policy = 'sketch.'
+            tuner.tune(tuning_opt, search_policy=policy, 
+                preset_cost_model=tuning_args['cost_model'])
 
     # Build module
-    with auto_scheduler.ApplyHistoryBest(log_file):
+    with auto_scheduler.ApplyHistoryBest(tuning_args['log_file']):
         with tvm.transform.PassContext(
             opt_level=3, config={"relay.backend.use_auto_scheduler": True}
         ):
             lib = relay.build(mod, target=target, params=params)
-    ctx = tvm.context(str(target), 0)
-    module = runtime.GraphModule(lib["default"](ctx))
+    ctx = tvm.device(str(target), 0)
+    module = graph_executor.GraphModule(lib["default"](ctx))
 
     # Feed input data
     for name, shape, dtype in inputs:
