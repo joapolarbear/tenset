@@ -124,7 +124,7 @@ def tune_and_evaluate(network_args, tuning_args, target, target_host, result_fil
                              "%s.B%d" % (network_args['network'], network_args['batch_size']),
 			     'ours', 'default',
                              {"costs": prof_res}, time.time()),
-                             args.result_file)
+                             result_file)
 
 
 if __name__ == "__main__":
