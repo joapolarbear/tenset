@@ -11,7 +11,8 @@ import random
 from tenset_cost_model.dataset import make_dataset_from_log_file
 from common import load_and_register_tasks, get_measure_record_filename
 import tvm 
-from utils.device_info import query_cc
+# from utils.device_info import query_cc
+from tvm_helper.tir_helper import device_str2target
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -27,8 +28,7 @@ if __name__ == "__main__":
 
     tasks = load_and_register_tasks()[:args.data_size]
     device = args.device
-    arch = query_cc(device.upper())
-    target = tvm.target.cuda(arch=f'sm_{arch}', model=device) # create t4 tvm cuda target
+    target = device_str2target(device.lower())
     files = []
     for task in tasks:
         file = get_measure_record_filename(task, target)
