@@ -4,6 +4,7 @@ import multiprocessing
 import pickle
 from collections import defaultdict
 import logging
+import time
 
 from .dataset import Dataset
 from .metric import max_curve
@@ -423,13 +424,25 @@ class XGBModelInternal:
         self.verbose_eval = verbose_eval
         self.workload_embed_dict = dict()
 
+        # TODO (huhanpeng): try other methods to check if GPUs are available
+        import torch
+        has_gpu = torch.cuda.is_available()
+        has_gpu = True
+        if has_gpu:
+            tree_method = 'gpu_hist'
+            n_gpus = 1
+        else:
+            tree_method = 'hist'
+            n_gpus = 0
+
         # xgb params
         self.xgb_params = {
+            "tree_method": tree_method,
             "max_depth": 6,
             "gamma": 0.003,
             "min_child_weight": 2,
             "eta": 0.2,
-            "n_gpus": 0,
+            "n_gpus": n_gpus,
             "nthread": multiprocessing.cpu_count() // 2,
             "verbosity": 0,
             "seed": seed or 43,
@@ -515,11 +528,13 @@ class XGBModelInternal:
         else:
             eval_sets = [(dtrain, "tr")]
 
+        tmp = time.time()
+        boost_rounds = 200
         # Train a new model
         bst = xgb.train(
             params=self.xgb_params,
             dtrain=dtrain,
-            num_boost_round=300,
+            num_boost_round=boost_rounds,
             obj=pack_sum_square_error,
             callbacks=[
                 custom_callback(
@@ -532,6 +547,7 @@ class XGBModelInternal:
                 )
             ],
         )
+        print("Training Time: %.3f s, for %d round" % (time.time() - tmp, boost_rounds))
         return bst
 
     def _predict_a_dataset(self, model, dataset):
